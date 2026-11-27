@@ -19,6 +19,7 @@
 import asyncio
 import contextlib
 import functools
+import heapq
 import inspect
 import logging
 import math
@@ -131,6 +132,78 @@ def transfer_budget(size: int) -> asyncio.Semaphore:
         _transfer_budgets[loop] = budget
 
     return budget
+
+
+class _PriorityLease:
+    __slots__ = ("_sem", "_fut")
+
+    def __init__(self, sem: "PrioritySemaphore", fut: "asyncio.Future | None"):
+        self._sem = sem
+        self._fut = fut  # None when the slot was free at acquire() time
+
+    async def __aenter__(self):
+        fut = self._fut
+        if fut is None:
+            return self
+        try:
+            await fut
+        except BaseException:
+            if fut.done() and not fut.cancelled():
+                # the slot was granted but the waiter was cancelled before it
+                # resumed: hand the slot straight to the next waiter
+                self._sem.release()
+            raise
+        return self
+
+    async def __aexit__(self, *exc):
+        self._sem.release()
+
+
+class PrioritySemaphore:
+    """Semaphore whose waiters are served highest-priority first (FIFO within a priority).
+
+    Use as ``async with sem:`` (priority 0) or ``async with sem.acquire(priority):``.
+    Downloads and uploads share the transfer slots; a renamer bot wants small
+    files (quick renames) to jump ahead of a big background transfer.
+    """
+
+    def __init__(self, value: int):
+        self._value = max(0, int(value))
+        self._waiters = []  # heap of (-priority, seq, future)
+        self._seq = 0
+
+    @property
+    def value(self) -> int:
+        return self._value
+
+    def locked(self) -> bool:
+        return self._value == 0
+
+    def acquire(self, priority: int = 0) -> _PriorityLease:
+        if self._value > 0 and not self._waiters:
+            self._value -= 1
+            return _PriorityLease(self, None)
+
+        fut = asyncio.get_running_loop().create_future()
+        heapq.heappush(self._waiters, (-int(priority), self._seq, fut))
+        self._seq += 1
+        return _PriorityLease(self, fut)
+
+    def release(self):
+        self._value += 1
+        while self._waiters and self._value > 0:
+            _, _, fut = heapq.heappop(self._waiters)
+            if not fut.done():
+                self._value -= 1
+                fut.set_result(None)
+                return
+
+    async def __aenter__(self):
+        await self.acquire(0).__aenter__()
+        return self
+
+    async def __aexit__(self, *exc):
+        self.release()
 
 
 class ReadAhead:
@@ -503,7 +576,7 @@ class Client(Methods):
 
     DOWNLOAD_POOL_SIZE = 4  # fallback default
     MEDIA_POOL_CAP = 16
-    MAX_CONCURRENT_TRANSMISSIONS = 16
+    MAX_CONCURRENT_TRANSMISSIONS = int(os.environ.get("VEKGRAM_MAX_CONCURRENT_TRANSMISSIONS", 16))
     MAX_MESSAGE_CACHE_SIZE = 1000
     MAX_TOPIC_CACHE_SIZE = 1000
     MAX_BUSINESS_CONNECTIONS = 512
@@ -663,8 +736,14 @@ class Client(Methods):
         self._session_locks = {}
         self._media_sessions_locks = {}
 
-        self.save_file_semaphore = asyncio.Semaphore(self.max_concurrent_transmissions)
-        self.get_file_semaphore = asyncio.Semaphore(self.max_concurrent_transmissions)
+        self.max_concurrent_downloads = int(
+            os.environ.get("VEKGRAM_MAX_CONCURRENT_DOWNLOADS", max_concurrent_transmissions)
+        )
+        self.max_concurrent_uploads = int(
+            os.environ.get("VEKGRAM_MAX_CONCURRENT_UPLOADS", max_concurrent_transmissions)
+        )
+        self.save_file_semaphore = PrioritySemaphore(self.max_concurrent_uploads)
+        self.get_file_semaphore = PrioritySemaphore(self.max_concurrent_downloads)
 
         self._session_creation_gate = asyncio.Semaphore(4)
 
@@ -1557,7 +1636,8 @@ class Client(Methods):
                 log.warning('[%s] No plugin loaded from "%s"', self.name, root)
 
     async def handle_download(self, packet):
-        file_id, directory, file_name, in_memory, file_size, progress, progress_args = packet
+        file_id, directory, file_name, in_memory, file_size, progress, progress_args = packet[:7]
+        priority = packet[7] if len(packet) > 7 else 0
 
         os.makedirs(directory, exist_ok=True) if not in_memory else None
         temp_file_path = os.path.abspath(re.sub("\\\\", "/", os.path.join(directory, file_name))) + ".temp"
@@ -1566,7 +1646,7 @@ class Client(Methods):
             file.truncate(file_size)
 
         try:
-            async for chunk in self.get_file(file_id, file_size, 0, 0, progress, progress_args, _write_file=None if in_memory else file):
+            async for chunk in self.get_file(file_id, file_size, 0, 0, progress, progress_args, priority=priority, _write_file=None if in_memory else file):
                 if in_memory:
                     file.write(chunk)
         except BaseException as e:
@@ -1596,9 +1676,12 @@ class Client(Methods):
         offset: int = 0,
         progress: Optional[Callable] = None,
         progress_args: tuple = (),
+        priority: int = 0,
         _write_file: object = None,
     ) -> AsyncGenerator[bytes, None]:
-        async with self.get_file_semaphore:
+        sem = self.get_file_semaphore
+        # a plain asyncio.Semaphore injected in place of ours takes no priority
+        async with (sem.acquire(priority) if isinstance(sem, PrioritySemaphore) else sem):
             file_type = file_id.file_type
 
             if file_type == FileType.CHAT_PHOTO:
@@ -1712,9 +1795,11 @@ class Client(Methods):
                     rate=dl_rate, ceiling=max(dl_rate, 150), burst=dl_burst
                 )
                 _paced = _is_bot or not _is_premium
+                _dl_flood_until = 0.0
+                _dl_flood_gate = asyncio.Lock()
 
                 async def _worker(session):
-                    nonlocal _done_count
+                    nonlocal _done_count, _dl_flood_until
                     while True:
                         await buffer_slots.acquire()
 
@@ -1754,7 +1839,12 @@ class Client(Methods):
                                         '[%s] Waiting for %s seconds before continuing (required by "upload.GetFile")',
                                         self.name, amount,
                                     )
-                                    await asyncio.sleep(amount + flood_wait_jitter(amount))
+                                    # one gate arms the earliest retry for the whole
+                                    # transfer; flooded workers re-fire staggered
+                                    async with _dl_flood_gate:
+                                        _dl_flood_until = max(_dl_flood_until, time.monotonic() + amount)
+                                        wait = _dl_flood_until - time.monotonic()
+                                    await asyncio.sleep(wait + flood_wait_jitter(amount))
                         except BaseException:
                             buffer_slots.release()
                             raise

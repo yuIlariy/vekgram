@@ -32,6 +32,7 @@ from pyrogram.file_id import FileId, FileType, PHOTO_TYPES
 
 DEFAULT_DOWNLOAD_DIR = "downloads/"
 STORY_MEDIA = ("photo", "video")
+SMALL_FILE_PRIORITY_MAX = 8 * 1024 * 1024  # files up to 8 MiB get download priority 1
 
 
 def safe_file_name(file_name: str) -> str:
@@ -150,7 +151,8 @@ class DownloadMedia:
         in_memory: bool = False,
         block: bool = True,
         progress: Optional[Callable] = None,
-        progress_args: tuple = ()
+        progress_args: tuple = (),
+        priority: Optional[int] = None
     ) -> Optional[Union[str, BinaryIO]]:
         """Download the media from a message.
 
@@ -186,6 +188,12 @@ class DownloadMedia:
                 Extra custom arguments for the progress callback function.
                 You can pass anything you need to be available in the progress callback scope; for example, a Message
                 object or a Client instance in order to edit the message with the updated progress status.
+
+            priority (``int``, *optional*):
+                Download queue priority: higher values are served first when the
+                ``VEKGRAM_MAX_CONCURRENT_DOWNLOADS`` slots are all busy. By default,
+                files up to 8 MiB get priority 1 and bigger files 0, so quick
+                downloads of small files jump ahead of big background transfers.
 
         Other Parameters:
             current (``int``):
@@ -320,8 +328,12 @@ class DownloadMedia:
                 extension
             )
 
+        if priority is None:
+            # small files (quick renames, thumbnails) jump ahead of big transfers
+            priority = 1 if 0 < file_size <= SMALL_FILE_PRIORITY_MAX else 0
+
         downloader = self.handle_download(
-            (file_id_obj, directory, file_name, in_memory, file_size, progress, progress_args)
+            (file_id_obj, directory, file_name, in_memory, file_size, progress, progress_args, priority)
         )
 
         if block:
