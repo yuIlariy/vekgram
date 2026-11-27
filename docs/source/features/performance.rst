@@ -136,7 +136,18 @@ A ``FLOOD_WAIT`` on a transfer no longer makes every worker sleep the full serve
 on its own: one gate per transfer arms the earliest retry deadline, and each flooded worker
 sleeps to that deadline plus up to 1 s of jitter, so a herd of flooded workers re-fires
 staggered instead of in one synchronized burst. The same gate exists per session for 5xx /
-timeout retries, which is what stops a ``-503`` storm from being retried in lockstep.
+timeout retries and for connection resets, and per CDN transfer for ``GetCdnFile`` floods —
+which is what stops a ``-503`` storm from being retried in lockstep. Any 5xx (500/502/503/504…)
+is retried through that gate; only non-5xx RPC errors surface immediately. The CDN rate bucket
+is adaptive too: it backs off on every flood and ramps back up on success, like the direct
+download pacer.
+
+Download tiers (``VEKGRAM_DL_POOL_*``, ``VEKGRAM_DL_WORKERS_*``, ``VEKGRAM_DL_RATE_*``,
+``VEKGRAM_DL_BURST_*``) default to 6 sessions / 4 workers / 32 rps / 16 burst for bots,
+6 / 4 / 150 / 35 for premium users and 5 / 3 / 16 / 16 for plain users; upload tiers
+(``VEKGRAM_UPLOAD_RATE_*``, ``VEKGRAM_UPLOAD_POOL_*``) default to 64 rps / 10 sessions for
+bots, 300 / 14 for premium and 32 / 12 for users. All are self-regulating: the pacers back
+off on floods, so raising them is safe.
 
 Media and CDN pool sessions ping every ``VEKGRAM_MEDIA_PING_INTERVAL`` (30) seconds instead
 of every 5: a dozen pooled file connections do not need a 5 s keepalive each. The main session
