@@ -467,6 +467,8 @@ class FakeSession:
         self.is_started = asyncio.Event()
         self.is_started.set()
         self.last_packet_received = 0
+        self._backoff_until = 0.0
+        self._backoff_gate = asyncio.Lock()
         self.client = type("C", (), {"name": "fake"})()
 
     async def send(self, query, timeout):
@@ -919,6 +921,11 @@ async def test_a_5xx_waits_longer_each_time():
         asyncio.sleep = real_sleep
 
     assert result == "answer"
-    assert slept == [1, 2, 4, 8, 16], (
-        f"slept {slept}; a DC that keeps answering 5xx needs room to recover"
-    )
+    bases = [1, 2, 4, 8, 16]
+    assert len(slept) == len(bases), f"slept {slept}"
+    for got, base in zip(slept, bases):
+        # the session-wide backoff gate plus jitter: each wait lands on the
+        # armed exponential deadline (+- clock epsilon) plus up to 1s jitter
+        assert base - 0.5 <= got <= base + 1.0, (
+            f"slept {slept}; a DC that keeps answering 5xx needs room to recover"
+        )
