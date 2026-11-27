@@ -94,6 +94,7 @@ class Session:
     MAX_RETRIES = 10
     ACKS_THRESHOLD = 10
     PING_INTERVAL = 5
+    MEDIA_PING_INTERVAL = int(os.environ.get("VEKGRAM_MEDIA_PING_INTERVAL", 30))
     STORED_MSG_IDS_MAX_SIZE = 1000 * 2
     MAX_SKEW_AHEAD = 30
     MAX_SKEW_BEHIND = 300
@@ -582,12 +583,20 @@ class Session:
             except OSError:
                 pass
 
+    @property
+    def ping_interval(self) -> float:
+        # media/CDN pool sessions only move file bytes; a 5s keepalive on each
+        # of a dozen pooled sessions is background chatter, not liveness
+        if self.is_media or self.is_cdn:
+            return self.MEDIA_PING_INTERVAL
+        return self.PING_INTERVAL
+
     async def ping_worker(self):
         log.info("PingTask started")
 
         while True:
             try:
-                await asyncio.wait_for(self.ping_task_event.wait(), self.PING_INTERVAL)
+                await asyncio.wait_for(self.ping_task_event.wait(), self.ping_interval)
             except asyncio.TimeoutError:
                 pass
             else:

@@ -20,6 +20,7 @@ import asyncio
 import contextvars
 import inspect
 import logging
+import os
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from typing import Dict, Optional, Tuple
@@ -149,7 +150,10 @@ class Dispatcher:
         self.locks_list = []
         self._modify_lock = asyncio.Lock()
 
-        self.updates_queue = asyncio.Queue(maxsize=256)
+        self.updates_queue = asyncio.Queue(
+            maxsize=int(os.environ.get("VEKGRAM_UPDATE_QUEUE", 1024))
+        )
+        self.dropped_updates = 0
         self.groups = OrderedDict()
 
         self.listeners = getattr(client, "listeners", None)
@@ -403,6 +407,7 @@ class Dispatcher:
                     "`no_updates=True` to stop receiving them."
                 )
 
+            self.dropped_updates += 1
             return False
 
         try:
@@ -417,6 +422,7 @@ class Dispatcher:
                 "moving slow work off the handler.",
                 type(update).__name__, self.ENQUEUE_TIMEOUT, self.updates_queue.maxsize
             )
+            self.dropped_updates += 1
             return False
         else:
             return True
