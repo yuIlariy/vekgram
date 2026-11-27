@@ -156,7 +156,8 @@ class SaveFile:
                         _pacer.on_success()
                     finally:
                         data = None
-                        budget.release()
+                        for _ in range(slots_per_part):
+                            budget.release()
 
             _flood_until = 0.0
             _flood_gate = asyncio.Lock()
@@ -243,6 +244,9 @@ class SaveFile:
             # big files go out as SaveBigFilePart, which allows 1 MiB parts:
             # half the requests for the same bytes
             part_size = BIG_PART_SIZE if is_big else PART_SIZE
+            # every window below is counted in bytes, not parts, so 1 MiB
+            # parts hold exactly what 512 KiB parts held
+            slots_per_part = max(1, part_size // PART_SIZE)
             file_total_parts = int(math.ceil(file_size / part_size))
             pool_cap = max(1, math.ceil((file_total_parts - file_part) / 2))
             rate_limit, tier_pool = _upload_tier_params(is_bot, is_premium)
@@ -281,7 +285,10 @@ class SaveFile:
 
             next_batch_task = None
             _pacer = AdaptiveBucket(
-                rate=rate_limit, ceiling=max(rate_limit, 300), burst=PACER_BURST, step=1.0
+                rate=rate_limit,
+                ceiling=max(rate_limit, 300),
+                burst=max(1, PACER_BURST * PART_SIZE // part_size),
+                step=1.0,
             )
             _paced = is_bot or not is_premium
             _stalled_since = 0.0
@@ -351,7 +358,8 @@ class SaveFile:
                         if _paced:
                             await _pacer.acquire()
 
-                        await budget.acquire()
+                        for _ in range(slots_per_part):
+                            await budget.acquire()
 
                         while True:
                             try:
