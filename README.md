@@ -39,7 +39,7 @@ app.run()
 - **Type-hinted** — Every type and method is annotated for excellent editor support.
 - **Fast** — Boosted by [WarpCrypto](https://github.com/rjriajul/WarpCrypto), a high-performance cryptography library written in Rust. `warpcrypto` is a core dependency, so it is always installed with vekgram.
 - **Powerful** — Full access to Telegram's API for any official client action and more.
-- **Tuned for bots that move files** — priority download queue (small files jump ahead), split upload/download concurrency budgets, 1 MiB parts for big uploads, staggered flood-wait retries, slower keepalives on media sessions, and a default rate limiter for bots. All tunable via `VEKGRAM_*` environment variables (see [performance docs](https://yuilariy.github.io/vekgram/features/performance.html)).
+- **Tuned for bots that move files** — priority download queue (small files jump ahead), split upload/download concurrency budgets, 1 MiB parts for big uploads, staggered flood-wait retries, slower keepalives on media sessions, and a default rate limiter for bots. All tunable via `VEKGRAM_*` environment variables (see [performance docs](https://yuilariy.github.io/vekgram/features/performance/)).
 
 ### Example with Inline Keyboard
 
