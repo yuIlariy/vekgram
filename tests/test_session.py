@@ -11,7 +11,7 @@ import pyrogram.session.session as session_mod
 from pyrogram import raw
 from pyrogram.connection import Connection
 from pyrogram.connection.transport import TCPAbridged
-from pyrogram.errors import AuthKeyUnregistered, FloodWait, ServiceUnavailable
+from pyrogram.errors import AuthKeyUnregistered, BadRequest, FloodWait, RPCError, ServiceUnavailable
 from pyrogram.session.internals import msg_id as msg_id_mod, MsgId
 from pyrogram.session.session import Session, _serialize_file_part
 
@@ -561,6 +561,82 @@ async def test_a_flood_wait_above_the_threshold_still_raises_at_once():
         await Session._invoke(session, FakeQuery(), 3, 1, 10)
 
     assert session.sent == 1
+
+
+class BadGateway(RPCError):
+    CODE = 502
+    ID = "BAD_GATEWAY"
+
+
+class ErrorSession:
+    """Session whose send raises a chosen error for the first `fail_times` calls."""
+
+    MAX_RETRIES = Session.MAX_RETRIES
+    WAIT_TIMEOUT = Session.WAIT_TIMEOUT
+
+    def __init__(self, error, fail_times=0):
+        self.error = error
+        self.fail_times = fail_times
+        self.sent = 0
+        self.send_times = []
+        self.is_started = asyncio.Event()
+        self.is_started.set()
+        self.last_packet_received = time.monotonic()
+        self.client = type("C", (), {"name": "fake"})()
+        self._flood_gate = asyncio.Lock()
+        self._flood_until = 0.0
+        self._backoff_gate = asyncio.Lock()
+        self._backoff_until = 0.0
+
+    async def send(self, query, timeout):
+        self.sent += 1
+        self.send_times.append(time.monotonic())
+        if self.sent <= self.fail_times:
+            raise self.error
+        return "answer"
+
+    async def restart(self):
+        pass
+
+
+async def test_any_5xx_is_retried_not_only_500_and_503():
+    # 502/504 have no dedicated exception class; they must still be retried
+    # through the backoff gate instead of surfacing on the first attempt
+    session = ErrorSession(BadGateway("oops"), fail_times=2)
+
+    result = await Session._invoke(session, FakeQuery(), 3, 1, 1)
+
+    assert result == "answer"
+    assert session.sent == 3
+    assert session._backoff_until > 0, "the backoff gate was never armed"
+
+
+async def test_a_4xx_rpc_error_is_never_retried():
+    session = ErrorSession(BadRequest("nope"), fail_times=99)
+
+    with pytest.raises(BadRequest):
+        await Session._invoke(session, FakeQuery(), 5, 1, 1)
+
+    assert session.sent == 1
+
+
+async def test_concurrent_connection_resets_retry_staggered_not_in_lockstep():
+    session = ErrorSession(ConnectionResetError("reset"), fail_times=5)
+
+    results = await asyncio.gather(*(
+        Session._invoke(session, FakeQuery(), 3, 1, 1) for _ in range(5)
+    ))
+
+    assert results == ["answer"] * 5
+    assert session.sent == 10
+    assert session._backoff_until > 0, "the backoff gate was never armed"
+
+    retries = session.send_times[5:]
+    spread = max(retries) - min(retries)
+    assert spread > 0.02, (
+        f"the 5 retries fired within {spread:.4f}s of each other; "
+        "the backoff gate should spread them out"
+    )
 METHODS = Path(__file__).resolve().parents[1] / "pyrogram" / "methods"
 
 

@@ -13,7 +13,7 @@ from pyrogram.methods.rate_limiter import RateLimiter
 from pyrogram.methods.utilities.start import enable_default_bot_rate_limiter
 from pyrogram.session.session import Session
 from tests.e2e import FakeDC, document, make_client as make_e2e_client
-from tests.test_transfers import CHUNK, SIZE
+from tests.test_transfers import CHUNK, SIZE, CdnDC
 
 
 class Asyncio:
@@ -215,3 +215,51 @@ async def test_download_flood_waits_are_gated_and_staggered(monkeypatch):
         "(armed gate deadline +- clock epsilon, plus up to 1s jitter)"
     )
     assert all(4 <= s <= 6 for s in slept), slept
+
+
+# ------------------------------------------------------------- cdn floods
+
+
+class FloodCdnDC(CdnDC):
+    """CdnDC that answers the first `floods` GetCdnFile calls with FLOOD_WAIT."""
+
+    def __init__(self, size, hash_span, floods, **kw):
+        super().__init__(size, hash_span, **kw)
+        self.floods = floods
+        self.cdn_calls = 0
+
+    def _answer(self, query):
+        inner = getattr(query, "query", query)
+        if isinstance(inner, raw.functions.upload.GetCdnFile):
+            self.cdn_calls += 1
+            if self.cdn_calls <= self.floods:
+                raise FloodWait(value=5, rpc_name="upload.GetCdnFile")
+        return super()._answer(query)
+
+
+async def test_cdn_flood_waits_are_gated_and_staggered(monkeypatch):
+    slept = []
+    monkeypatch.setattr(client_mod, "asyncio", Asyncio(slept))
+    monkeypatch.setattr(session_mod, "asyncio", Asyncio(slept))
+
+    dc = FloodCdnDC(SIZE, SIZE, floods=3, seed_hashes=True)
+    client = make_e2e_client(dc, sessions=4, premium=True)
+
+    async def stop():
+        pass
+
+    for session in await client._get_media_session_pool(2, 4):
+        session.stop = stop
+
+    total = 0
+    async for chunk in client.get_file(document(), SIZE):
+        total += len(chunk)
+
+    assert total == SIZE
+    assert dc.cdn_calls == SIZE // CHUNK + 3, (
+        f"{dc.cdn_calls} GetCdnFile calls; every chunk served, 3 of them flooded first"
+    )
+    assert len(slept) == 3 and all(4 <= s <= 6 for s in slept), (
+        f"slept {slept}; each flooded GetCdnFile must wait on the armed ~5s gate "
+        "deadline (+- clock epsilon) plus at most 1s of jitter, not its own full sleep"
+    )

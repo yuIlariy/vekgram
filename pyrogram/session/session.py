@@ -896,7 +896,12 @@ class Session:
                             self.client.name, amount, query_name)
 
                 await asyncio.sleep(wait + flood_wait_jitter(amount))
-            except (OSError, InternalServerError, ServiceUnavailable, TimeoutError) as e:
+            except (OSError, RPCError, TimeoutError) as e:
+                if isinstance(e, RPCError) and not 500 <= (e.CODE or 0) < 600:
+                    # not a server-side overload (and not a flood, those are
+                    # handled above): surface the real error at once
+                    raise
+
                 retries -= 1
                 if retries == 0:
                     raise
@@ -911,16 +916,22 @@ class Session:
                 )
 
                 if isinstance(e, ConnectionResetError):
-                    await asyncio.sleep(0.1)
-                elif isinstance(e, (InternalServerError, ServiceUnavailable)) or (
+                    # a reset connection re-fires every in-flight request at
+                    # once; stagger them through the same backoff gate
+                    async with self._backoff_gate:
+                        self._backoff_until = max(self._backoff_until, time.monotonic() + 0.1)
+                        wait = self._backoff_until - time.monotonic()
+                    await asyncio.sleep(wait + flood_wait_jitter(0.1))
+                elif isinstance(e, RPCError) or (
                     isinstance(e, TimeoutError)
                     and time.monotonic() - self.last_packet_received < self.WAIT_TIMEOUT
                 ):
+                    # any 5xx (500/502/503/504...) means a DC that is already
+                    # overloaded: parallel in-flight requests must not re-fire
+                    # in lockstep on the same tick, so one gate arms the earliest
+                    # retry time for the whole session and each waiter adds its
+                    # own jitter on top.
                     backoff = min(2 ** (attempt - 1), 30)
-                    # A DC answering 5xx/timeout is already overloaded: parallel
-                    # in-flight requests must not re-fire in lockstep on the same
-                    # tick, so one gate arms the earliest retry time for the whole
-                    # session and each waiter adds its own jitter on top.
                     async with self._backoff_gate:
                         self._backoff_until = max(self._backoff_until, time.monotonic() + backoff)
                         wait = self._backoff_until - time.monotonic()
