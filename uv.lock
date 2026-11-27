@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -770,15 +770,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pastel"
-version = "0.2.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/76/f1/4594f5e0fcddb6953e5b8fe00da8c317b8b41b547e2b3ae2da7512943c62/pastel-0.2.1.tar.gz", hash = "sha256:e6581ac04e973cac858828c6202c1e1e81fee1dc7de7683f3e1ffe0bfd8a573d", size = 7555, upload-time = "2020-09-16T19:21:12.43Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/18/a8444036c6dd65ba3624c63b734d3ba95ba63ace513078e1580590075d21/pastel-0.2.1-py2.py3-none-any.whl", hash = "sha256:4349225fcdf6c2bb34d483e523475de5bb04a5c10ef711263452cb37d7dd4364", size = 5955, upload-time = "2020-09-16T19:21:11.409Z" },
-]
-
-[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -789,16 +780,15 @@ wheels = [
 
 [[package]]
 name = "poethepoet"
-version = "0.47.1"
+version = "0.49.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pastel" },
     { name = "pyyaml" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/08/8c/6e866f2dd70aa3339fd3cdcd16648612a11726ddf0b803f0602885e16bd1/poethepoet-0.47.1.tar.gz", hash = "sha256:bb27f9fbba161c5be11878ad0a6f64ff29b8a68851d1861e4bd30255b753da2a", size = 145618, upload-time = "2026-07-01T07:36:20.922Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/7e/160d391368d359f7dd6dd647575499c395687beb4a6b2ebfbfbf8a20b817/poethepoet-0.49.0.tar.gz", hash = "sha256:256b72c057b5f60341bbe09498212939e558341fac4ab59d0ce478aca04f0d2a", size = 157750, upload-time = "2026-10-15T06:08:57.094Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/8f/6518a009dd017ff4c281cb62207bc6741638c93738f08fd27b3caaa1e725/poethepoet-0.47.1-py3-none-any.whl", hash = "sha256:1738b9f6f1dc2c5d61b3e620aa4a2e7b8c20bccef815c8bfb312ebf87464d671", size = 183474, upload-time = "2026-07-01T07:36:19.333Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/f5/a2404b9cb3c299cd148533d07e1a378b60aa4ae640c69fb522596ca157ae/poethepoet-0.49.0-py3-none-any.whl", hash = "sha256:97b456f3c52c9af75d4bc504e0f5cfee44545a84f446ba645a0a8f6a0131422f", size = 195985, upload-time = "2026-10-15T06:08:55.332Z" },
 ]
 
 [[package]]
@@ -1460,6 +1450,71 @@ wheels = [
 ]
 
 [[package]]
+name = "vekgram"
+source = { editable = "." }
+dependencies = [
+    { name = "aiosqlite" },
+    { name = "python-socks", extra = ["asyncio"] },
+    { name = "warpcrypto" },
+]
+
+[package.optional-dependencies]
+botapi = [
+    { name = "beautifulsoup4" },
+    { name = "html5lib" },
+    { name = "requests" },
+]
+dev = [
+    { name = "jinja2" },
+    { name = "poethepoet" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pyyaml" },
+    { name = "twine" },
+]
+docs = [
+    { name = "furo" },
+    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "sphinx-copybutton" },
+]
+fast = [
+    { name = "uvloop", marker = "(platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
+]
+mongo = [
+    { name = "motor" },
+]
+redis = [
+    { name = "redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.20.0" },
+    { name = "beautifulsoup4", marker = "extra == 'botapi'", specifier = ">=4.12" },
+    { name = "furo", marker = "extra == 'docs'", specifier = ">=2023" },
+    { name = "html5lib", marker = "extra == 'botapi'", specifier = ">=1.1" },
+    { name = "jinja2", marker = "extra == 'dev'", specifier = ">=3" },
+    { name = "motor", marker = "extra == 'mongo'", specifier = ">=3.5" },
+    { name = "poethepoet", marker = "extra == 'dev'", specifier = ">=0.32" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "python-socks", extras = ["asyncio"], specifier = ">=2.4.0" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0" },
+    { name = "requests", marker = "extra == 'botapi'", specifier = ">=2.32" },
+    { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7" },
+    { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5" },
+    { name = "twine", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "uvloop", marker = "(platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra == 'fast') or (platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'fast')", specifier = "<=0.22.1" },
+    { name = "warpcrypto", specifier = ">=2.0.8" },
+]
+provides-extras = ["botapi", "dev", "docs", "fast", "mongo", "redis"]
+
+[[package]]
 name = "warpcrypto"
 version = "2.0.8"
 source = { registry = "https://pypi.org/simple" }
@@ -1527,71 +1582,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/d5/a0/8fd707bcb776a7be5
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/c6/040cbc72480d789a5f40d63fb484d3106554c4dfa2d2b70ad5022057750f/webencodings-0.6.1-py3-none-any.whl", hash = "sha256:7fab6269c8bf237c657876b52058ccb182e861518d1c695c1a9aaa8c1c105d5b", size = 8745, upload-time = "2026-08-15T14:22:56.31Z" },
 ]
-
-[[package]]
-name = "vekgram"
-source = { editable = "." }
-dependencies = [
-    { name = "aiosqlite" },
-    { name = "python-socks", extra = ["asyncio"] },
-    { name = "warpcrypto" },
-]
-
-[package.optional-dependencies]
-botapi = [
-    { name = "beautifulsoup4" },
-    { name = "html5lib" },
-    { name = "requests" },
-]
-dev = [
-    { name = "jinja2" },
-    { name = "poethepoet" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pyyaml" },
-    { name = "twine" },
-]
-docs = [
-    { name = "furo" },
-    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "sphinx-copybutton" },
-]
-fast = [
-    { name = "uvloop", marker = "(platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_python_implementation == 'CPython' and sys_platform == 'linux')" },
-]
-mongo = [
-    { name = "motor" },
-]
-redis = [
-    { name = "redis" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiosqlite", specifier = ">=0.20.0" },
-    { name = "beautifulsoup4", marker = "extra == 'botapi'", specifier = ">=4.12" },
-    { name = "furo", marker = "extra == 'docs'", specifier = ">=2023" },
-    { name = "html5lib", marker = "extra == 'botapi'", specifier = ">=1.1" },
-    { name = "jinja2", marker = "extra == 'dev'", specifier = ">=3" },
-    { name = "motor", marker = "extra == 'mongo'", specifier = ">=3.5" },
-    { name = "poethepoet", marker = "extra == 'dev'", specifier = ">=0.32" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
-    { name = "python-socks", extras = ["asyncio"], specifier = ">=2.4.0" },
-    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
-    { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0" },
-    { name = "requests", marker = "extra == 'botapi'", specifier = ">=2.32" },
-    { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7" },
-    { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5" },
-    { name = "twine", marker = "extra == 'dev'", specifier = ">=5" },
-    { name = "uvloop", marker = "(platform_python_implementation == 'CPython' and sys_platform == 'darwin' and extra == 'fast') or (platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'fast')", specifier = "<=0.22.1" },
-    { name = "warpcrypto", specifier = ">=2.0.8" },
-]
-provides-extras = ["botapi", "dev", "docs", "fast", "mongo", "redis"]
 
 [[package]]
 name = "zipp"
