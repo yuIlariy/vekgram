@@ -205,7 +205,7 @@ class SaveFile:
                         await asyncio.sleep(delay)
 
             async def read_batch():
-                batch_size = min(PART_SIZE * n_workers, MAX_BATCH)
+                batch_size = min(part_size * n_workers, MAX_BATCH)
                 return await self.loop.run_in_executor(
                     self.executor, fp.read, batch_size
                 )
@@ -266,7 +266,9 @@ class SaveFile:
 
                 _acked = [0]
 
-                n_workers = len(pool) * 2
+                # the in-flight window is a byte budget, not a part count: with
+                # 1 MiB big-file parts, half as many workers hold the same bytes
+                n_workers = max(1, len(pool) * 2 * PART_SIZE // part_size)
                 queue = asyncio.Queue(n_workers)
                 budget = ReadAhead(self.read_ahead_slots)
                 workers = [
