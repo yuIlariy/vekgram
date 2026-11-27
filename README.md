@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/yuIlariy/vekgram/main/assets/png/vekgram-icon-256.png" alt="vekgram" width="160">
+<img src="https://raw.githubusercontent.com/yuIlariy/vekgram/vek/assets/png/vekgram-icon-256.png" alt="vekgram" width="160">
 
 # vekgram
 
 [![PyPI](https://img.shields.io/pypi/v/vekgram)](https://pypi.org/project/vekgram/)
 [![Python](https://img.shields.io/pypi/pyversions/vekgram)](https://pypi.org/project/vekgram/)
 [![Downloads](https://img.shields.io/pypi/dm/vekgram)](https://pypi.org/project/vekgram/)
-[![License](https://img.shields.io/github/license/yuIlariy/vekgram)](https://github.com/yuIlariy/vekgram/blob/main/COPYING.lesser)
+[![License](https://img.shields.io/github/license/yuIlariy/vekgram)](https://github.com/yuIlariy/vekgram/blob/vek/COPYING.lesser)
 
 **Elegant, modern and asynchronous Telegram MTProto API framework in Python for users and bots**
 
@@ -120,4 +120,4 @@ Releases are published with **PyPI Trusted Publishing (OIDC)** — no API token 
 
 - [Source code](https://github.com/yuIlariy/vekgram)
 - [Issue tracker](https://github.com/yuIlariy/vekgram/issues)
-- [Contributing guide](https://github.com/yuIlariy/vekgram/blob/main/CONTRIBUTING.md)
+- [Contributing guide](https://github.com/yuIlariy/vekgram/blob/vek/CONTRIBUTING.md)

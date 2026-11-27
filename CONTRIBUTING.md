@@ -42,10 +42,10 @@ uv run poe docs
 ## Submitting Changes
 
 1. Fork the repo
-2. Create a branch from `main`
+2. Create a branch from `vek`
 3. Make your changes
 4. Run `uv run poe test` to verify
-5. Submit a pull request to `main`
+5. Submit a pull request to `vek`
 
 ## Code Style
 
