@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the documentation
+    url: https://vekgram.com
+    about: Guides, the full API reference and the Pyrogram migration notes live here.
+  - name: Ask vekgram related questions
+    url: https://github.com/yuIlariy/vekgram/discussions
+    about: This place is only for reporting issues about vekgram. Questions and discussion go to the Telegram group.
+  - name: Join the Telegram channel
+    url: https://t.me/vekgram_updates
+    about: Follow the channel for news, releases and announcements.
