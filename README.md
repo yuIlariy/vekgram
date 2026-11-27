@@ -108,7 +108,7 @@ uv run poe test
 
 ### Publishing to PyPI
 
-Releases are published with **PyPI Trusted Publishing (OIDC)** — no API token is stored anywhere. `.github/workflows/publish.yml` runs when a GitHub release is published, with `permissions: id-token: write` in the `vekgram` environment, and `uv publish` exchanges the OIDC token automatically. The trusted publisher on PyPI is registered for this repository (`yuIlariy/vekgram`), workflow `publish.yml`. To release: create a GitHub release (e.g. `v3.1.7`); the first run activates the pending publisher and uploads `vekgram` to PyPI.
+Releases are fully automatic and published with **PyPI Trusted Publishing (OIDC)** — no API token is stored anywhere. Push a version tag (`git tag v3.1.8 && git push origin v3.1.8`) and `.github/workflows/publish.yml` builds the package, runs `uv publish dist/*` (the `id-token: write` permission in the `vekgram` environment lets uv exchange the OIDC token automatically), and creates the GitHub release with the `dist/` assets. The trusted publisher on PyPI is registered for this repository (`yuIlariy/vekgram`), workflow `publish.yml`, environment `vekgram`, any ref. `pip install vekgram` always comes from **PyPI**, not from GitHub releases. One-click release: **Actions → Release → Run workflow** (`.github/workflows/release.yml` bumps `__version__` in `pyrogram/__init__.py`, commits, tags and pushes — which triggers the publish).
 
 ### Credits
 
