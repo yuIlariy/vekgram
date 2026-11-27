@@ -40,6 +40,12 @@ If a version number prints, you are done.
 
 .. note::
 
+    ``pip install "vekgram[fast]"`` additionally installs uvloop on Linux and macOS (CPython).
+    ``warpcrypto`` is a core dependency, so ``vekgram[fast]`` automatically installs **both
+    uvloop and warpcrypto**. See :doc:`/topics/speedups` for how to enable uvloop.
+
+.. note::
+
     Do not install ``pyrogram`` and ``vekgram`` side by side. They provide the same
     ``pyrogram`` module and whichever was installed last wins, which is a confusing way to
     find out. Run ``pip uninstall pyrogram`` first if it is already there.
@@ -72,11 +78,11 @@ how you get them, and how you get fixes to the transfer and reconnection paths.
 Development version
 -------------------
 
-The ``dev`` branch is where work lands before a release:
+The ``vek`` branch is the default branch where work lands before a release:
 
 .. code-block:: bash
 
-    $ pip install -U git+https://github.com/yuIlariy/vekgram.git@dev
+    $ pip install -U git+https://github.com/yuIlariy/vekgram.git@vek
 
 It is generally usable and occasionally not. Pin a release for anything you cannot babysit.
 

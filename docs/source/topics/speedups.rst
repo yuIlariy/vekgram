@@ -35,7 +35,9 @@ Installation
 
     $ pip install -U vekgram[fast]
 
-That extra pulls in uvloop on Linux and macOS. Installing it directly works too:
+That extra pulls in uvloop on Linux and macOS — and because ``warpcrypto`` is a core
+dependency, ``vekgram[fast]`` automatically installs **both uvloop and warpcrypto**.
+Installing uvloop directly works too:
 
 .. code-block:: bash
 

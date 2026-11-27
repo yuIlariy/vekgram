@@ -114,10 +114,13 @@ Releases are published with **PyPI Trusted Publishing (OIDC)** — no API token 
 
 - [Pyrogram](https://github.com/pyrogram/pyrogram) by **Dan** — the original MTProto framework.
 - [wzgram](https://github.com/rjriajul/wzgram) by **rjriajul** — the base of this fork, including [WarpCrypto](https://github.com/rjriajul/WarpCrypto), the Rust crypto backend.
-- **vekgram** by [yuIlariy](https://github.com/yuIlariy).
+- **vekgram** by [yuIlariy](https://t.me/xspes) ([GitHub](https://github.com/yuIlariy)).
 
 ### Resources
 
 - [Source code](https://github.com/yuIlariy/vekgram)
 - [Issue tracker](https://github.com/yuIlariy/vekgram/issues)
 - [Contributing guide](https://github.com/yuIlariy/vekgram/blob/vek/CONTRIBUTING.md)
+- [Telegram channel](https://t.me/vekgram) — news, releases, announcements
+- [Telegram group](https://t.me/vekgramchat) — questions and discussion
+- [Maintainer on Telegram](https://t.me/xspes)

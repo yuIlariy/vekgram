@@ -4,8 +4,11 @@ contact_links:
     url: https://vekgram.com
     about: Guides, the full API reference and the Pyrogram migration notes live here.
   - name: Ask vekgram related questions
-    url: https://github.com/yuIlariy/vekgram/discussions
+    url: https://t.me/vekgramchat
     about: This place is only for reporting issues about vekgram. Questions and discussion go to the Telegram group.
   - name: Join the Telegram channel
-    url: https://t.me/vekgram_updates
+    url: https://t.me/vekgram
     about: Follow the channel for news, releases and announcements.
+  - name: Message the maintainer
+    url: https://t.me/xspes
+    about: Support and direct contact with the vekgram owner (yuIlariy).
