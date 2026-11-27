@@ -1,0 +1,359 @@
+#  Pyrogram - Telegram MTProto API Client Library for Python
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
+#
+#  This file is part of Pyrogram.
+#
+#  Pyrogram is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU Lesser General Public License as published
+#  by the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  Pyrogram is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
+
+import pyrogram
+from pyrogram.parser.html import HTML
+
+
+# expected: the expected unparsed HTML
+# text: original text without entities
+# entities: message entities coming from the server
+
+def test_html_unparse_bold():
+    expected = "<b>bold</b>"
+    text = "bold"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.BOLD, offset=0, length=4)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_italic():
+    expected = "<i>italic</i>"
+    text = "italic"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.ITALIC, offset=0, length=6)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_underline():
+    expected = "<u>underline</u>"
+    text = "underline"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.UNDERLINE, offset=0, length=9)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_strike():
+    expected = "<s>strike</s>"
+    text = "strike"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.STRIKETHROUGH, offset=0, length=6)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_spoiler():
+    expected = "<tg-spoiler>spoiler</tg-spoiler>"
+    text = "spoiler"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.SPOILER, offset=0, length=7)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_url():
+    expected = '<a href="https://pyrogram.org/">URL</a>'
+    text = "URL"
+    entities = pyrogram.types.List([pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.TEXT_LINK,
+                                                                 offset=0, length=3, url='https://pyrogram.org/')])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_code():
+    expected = '<code>code</code>'
+    text = "code"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.CODE, offset=0, length=4)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_pre():
+    expected = """<pre><code class="language-python">for i in range(10):
+    print(i)</code></pre>"""
+
+    text = """for i in range(10):
+    print(i)"""
+
+    entities = pyrogram.types.List([pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.PRE, offset=0,
+                                                                 length=32, language='python')])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_mixed():
+    expected = "<b>aaaaaaa<i>aaa<u>bbbb</u></i></b><u><i>bbbbbbccc</i></u><u>ccccccc<s>ddd</s></u><s>ddddd<tg-spoiler>dd" \
+               "eee</tg-spoiler></s><tg-spoiler>eeeeeeefff</tg-spoiler>ffff<code>fffggggggg</code>ggghhhhhhhhhh"
+    text = "aaaaaaaaaabbbbbbbbbbccccccccccddddddddddeeeeeeeeeeffffffffffgggggggggghhhhhhhhhh"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.BOLD, offset=0, length=14),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.ITALIC, offset=7, length=7),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.UNDERLINE, offset=10, length=4),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.UNDERLINE, offset=14, length=9),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.ITALIC, offset=14, length=9),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.UNDERLINE, offset=23, length=10),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.STRIKETHROUGH, offset=30, length=3),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.STRIKETHROUGH, offset=33, length=10),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.SPOILER, offset=38, length=5),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.SPOILER, offset=43, length=10),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.CODE, offset=57, length=10)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_escaped():
+    expected = "<b>&lt;b&gt;bold&lt;/b&gt;</b>"
+    text = "<b>bold</b>"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.BOLD, offset=0, length=11)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_escaped_nested():
+    expected = "<b>&lt;b&gt;bold <u>&lt;u&gt;underline&lt;/u&gt;</u> bold&lt;/b&gt;</b>"
+    text = "<b>bold <u>underline</u> bold</b>"
+    entities = pyrogram.types.List(
+        [pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.BOLD, offset=0, length=33),
+         pyrogram.types.MessageEntity(type=pyrogram.enums.MessageEntityType.UNDERLINE, offset=8, length=16)])
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_unparse_no_entities():
+    expected = "text"
+    text = "text"
+    entities = []
+
+    assert HTML.unparse(text=text, entities=entities) == expected
+
+
+def test_html_parse_blockquote():
+    html = HTML(client=None)
+    import asyncio
+
+    async def run():
+        # regular blockquote
+        result = await html.parse("<blockquote>quote</blockquote>")
+        msg, ents = result["message"], result["entities"]
+        assert msg == "quote"
+        assert len(ents) == 1
+        assert ents[0].collapsed is None
+
+        # expandable blockquote
+        result = await html.parse('<blockquote expandable="">collapsed quote</blockquote>')
+        msg, ents = result["message"], result["entities"]
+        assert msg == "collapsed quote"
+        assert len(ents) == 1
+        assert ents[0].collapsed is True
+
+        # bare expandable attribute (without value)
+        result = await html.parse("<blockquote expandable>bare</blockquote>")
+        assert result["entities"][0].collapsed is True
+
+    asyncio.run(run())
+
+
+def test_html_unparse_blockquote_expandable():
+    text = "expandable quote"
+    entities = pyrogram.types.List([
+        pyrogram.types.MessageEntity(
+            type=pyrogram.enums.MessageEntityType.BLOCKQUOTE,
+            offset=0, length=16, expandable=True
+        )
+    ])
+    assert HTML.unparse(text=text, entities=entities) == '<blockquote expandable>expandable quote</blockquote>'
+
+
+def test_html_parse_tg_spoiler():
+    html = HTML(client=None)
+    import asyncio
+
+    async def run():
+        result = await html.parse("<tg-spoiler>hidden</tg-spoiler>")
+        assert result["message"] == "hidden"
+        assert len(result["entities"]) == 1
+
+        result = await html.parse('<span class="tg-spoiler">hidden</span>')
+        assert result["message"] == "hidden"
+        assert len(result["entities"]) == 1
+
+    asyncio.run(run())
+
+
+def test_html_unparse_pre_no_language():
+    text = "code block"
+    entities = pyrogram.types.List([
+        pyrogram.types.MessageEntity(
+            type=pyrogram.enums.MessageEntityType.PRE,
+            offset=0, length=10
+        )
+    ])
+    assert HTML.unparse(text=text, entities=entities) == "<pre>code block</pre>"
+
+
+def test_html_parse_ins():
+    html = HTML(client=None)
+    import asyncio
+
+    async def run():
+        result = await html.parse("<ins>inserted</ins>")
+        assert result["message"] == "inserted"
+
+    asyncio.run(run())
+def test_html_parse_tg_emoji_with_a_non_numeric_id():
+    html = HTML(client=None)
+    import asyncio
+
+    async def run():
+        result = await html.parse('<tg-emoji emoji-id="abc">x</tg-emoji>')
+        assert result["message"] == "x"
+        assert result["entities"] is None
+
+    asyncio.run(run())
+
+
+def test_html_parse_tg_emoji_with_a_negative_id():
+    html = HTML(client=None)
+    import asyncio
+
+    async def run():
+        result = await html.parse('<tg-emoji emoji-id="-1">x</tg-emoji>')
+        assert result["message"] == "x"
+        assert result["entities"][0].document_id == -1
+
+    asyncio.run(run())
+
+
+def test_html_parse_tg_time_with_a_non_numeric_unix():
+    html = HTML(client=None)
+    import asyncio
+
+    async def run():
+        result = await html.parse('<tg-time unix="abc">x</tg-time>')
+        assert result["message"] == "x"
+        assert result["entities"] is None
+
+    asyncio.run(run())
+
+
+def test_html_parse_tg_time_with_an_empty_unix():
+    html = HTML(client=None)
+    import asyncio
+
+    async def run():
+        result = await html.parse('<tg-time unix="">x</tg-time>')
+        assert result["message"] == "x"
+        assert result["entities"] is None
+
+    asyncio.run(run())
+
+
+def _entity(entity_type, offset, length, **kwargs):
+    return pyrogram.types.MessageEntity(
+        type=entity_type, offset=offset, length=length, **kwargs
+    )
+
+
+def test_html_unparse_half_emoji_entity_widens_to_the_whole_code_point():
+    # An entity covering only the first UTF-16 unit of an emoji must not split
+    # the surrogate pair: it widens outward and stays crash-free.
+    text = "😀"
+    entities = pyrogram.types.List([
+        _entity(pyrogram.enums.MessageEntityType.BOLD, 0, 1)
+    ])
+
+    assert HTML.unparse(text=text, entities=entities) == "<b>😀</b>"
+
+
+def test_html_unparse_entity_starting_inside_an_emoji():
+    text = "😀"
+    entities = pyrogram.types.List([
+        _entity(pyrogram.enums.MessageEntityType.BOLD, 1, 1)
+    ])
+
+    assert HTML.unparse(text=text, entities=entities) == "<b>😀</b>"
+
+
+def test_html_unparse_entity_ending_inside_an_emoji():
+    # Emoji occupies UTF-16 units 1..2 in "a😀b"; a bold ending at unit 2 splits
+    # the pair and must widen right.
+    text = "a😀b"
+    entities = pyrogram.types.List([
+        _entity(pyrogram.enums.MessageEntityType.BOLD, 1, 1)
+    ])
+
+    assert HTML.unparse(text=text, entities=entities) == "a<b>😀</b>b"
+
+
+def test_html_unparse_custom_emoji_half_entity():
+    text = "😀"
+    entities = pyrogram.types.List([
+        _entity(
+            pyrogram.enums.MessageEntityType.CUSTOM_EMOJI, 0, 1,
+            custom_emoji_id="12345",
+        )
+    ])
+
+    assert HTML.unparse(text=text, entities=entities) == '<tg-emoji emoji-id="12345">😀</tg-emoji>'
+
+
+def test_html_unparse_aligned_emoji_entity_is_unchanged():
+    # Sanity check: an entity already aligned to the emoji boundary is untouched.
+    text = "a😀b"
+    entities = pyrogram.types.List([
+        _entity(pyrogram.enums.MessageEntityType.BOLD, 1, 2)
+    ])
+
+    assert HTML.unparse(text=text, entities=entities) == "a<b>😀</b>b"
+
+
+def test_html_unparse_normal_entity_after_emoji_is_unchanged():
+    # "😀 hello": the emoji is UTF-16 units 0..1, then " hello".  A normal,
+    # aligned entity must be byte-identical to the pre-fix output.
+    text = "😀 hello"
+    entities = pyrogram.types.List([
+        _entity(pyrogram.enums.MessageEntityType.BOLD, 3, 5)
+    ])
+
+    assert HTML.unparse(text=text, entities=entities) == "😀 <b>hello</b>"
+
+
+def test_html_unparse_entity_with_leading_space_is_unchanged():
+    # The exact case requested: entity(offset=2, length=5) on "😀 hello".  The
+    # fix must only touch misaligned surrogate boundaries, never valid ones.
+    text = "😀 hello"
+    entities = pyrogram.types.List([
+        _entity(pyrogram.enums.MessageEntityType.BOLD, 2, 5)
+    ])
+
+    assert HTML.unparse(text=text, entities=entities) == "😀<b> hell</b>o"
+
+
+def test_html_unparse_partially_overlapping_entities_stay_well_formed():
+    text = "hello world"
+    entities = pyrogram.types.List([
+        _entity(pyrogram.enums.MessageEntityType.BOLD, 0, 7),
+        _entity(pyrogram.enums.MessageEntityType.ITALIC, 5, 6),
+    ])
+
+    assert HTML.unparse(text=text, entities=entities) == "<b>hello<i> w</i></b><i>orld</i>"

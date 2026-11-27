@@ -1,0 +1,316 @@
+#  Pyrogram - Telegram MTProto API Client Library for Python
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
+#
+#  This file is part of Pyrogram.
+#
+#  Pyrogram is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU Lesser General Public License as published
+#  by the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  Pyrogram is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
+
+import html
+import re
+import urllib.parse
+from typing import Optional
+
+import pyrogram
+from pyrogram.enums import MessageEntityType
+from . import utils
+from .html import HTML
+
+BOLD_DELIM = "**"
+ITALIC_DELIM = "__"
+UNDERLINE_DELIM = "--"
+STRIKE_DELIM = "~~"
+SPOILER_DELIM = "||"
+CODE_DELIM = "`"
+PRE_DELIM = "```"
+
+MARKDOWN_RE = re.compile(r"({d})|(!?)\[(.+?)\]\((.+?)\)".format(
+    d="|".join(
+        ["".join(i) for i in [
+            [rf"\{j}" for j in i]
+            for i in [
+                PRE_DELIM,
+                CODE_DELIM,
+                STRIKE_DELIM,
+                UNDERLINE_DELIM,
+                ITALIC_DELIM,
+                BOLD_DELIM,
+                SPOILER_DELIM
+            ]
+        ]]
+    )))
+
+QUOTE_DELIM = ">"
+EXPANDABLE_QUOTE_DELIM = "**>"
+QUOTE_MARKERS = (
+    (EXPANDABLE_QUOTE_DELIM, True),
+    ("**&gt;", True),
+    (QUOTE_DELIM, False),
+    ("&gt;", False),
+)
+
+OPENING_TAG = "<{}>"
+CLOSING_TAG = "</{}>"
+URL_MARKUP = '<a href="{}">{}</a>'
+EMOJI_MARKUP = '<tg-emoji emoji-id="{}">{}</tg-emoji>'
+DATE_TIME_MARKUP = '<tg-time unix="{}" format="{}">{}</tg-time>'
+FIXED_WIDTH_DELIMS = [CODE_DELIM, PRE_DELIM]
+
+
+class Markdown:
+    def __init__(self, client: Optional["pyrogram.Client"]):
+        self.html = HTML(client)
+
+    @staticmethod
+    def _split_quote_marker(line: str):
+        for marker, expandable in QUOTE_MARKERS:
+            if line.startswith(marker):
+                return line[len(marker):], expandable
+
+        return None, False
+
+    @classmethod
+    def _quotes_to_html(cls, text: str) -> str:
+        lines = text.split("\n")
+        out = []
+        index = 0
+        in_pre = False
+
+        while index < len(lines):
+            line = lines[index]
+
+            if line.count(PRE_DELIM) % 2:
+                in_pre = not in_pre
+
+            body, expandable = (None, False) if in_pre else cls._split_quote_marker(line)
+
+            if body is None:
+                out.append(line)
+                index += 1
+                continue
+
+            block = [body]
+            index += 1
+
+            while index < len(lines):
+                nxt, nxt_expandable = cls._split_quote_marker(lines[index])
+
+                if nxt is None or nxt_expandable:
+                    break
+
+                block.append(nxt)
+                index += 1
+
+            quoted = "\n".join(block)
+
+            if expandable and quoted.endswith(SPOILER_DELIM):
+                quoted = quoted[: -len(SPOILER_DELIM)]
+
+            tag = "<blockquote expandable>" if expandable else "<blockquote>"
+            out.append(f"{tag}{quoted}</blockquote>")
+
+        return "\n".join(out)
+
+    async def parse(self, text: str, strict: bool = False):
+        if strict:
+            text = html.escape(text)
+
+        text = self._quotes_to_html(text)
+
+        delims = set()
+        is_fixed_width = False
+
+        for i, match in enumerate(re.finditer(MARKDOWN_RE, text)):
+            start, _ = match.span()
+            delim, bang, text_url, url = match.groups()
+            full = match.group(0)
+
+            if delim in FIXED_WIDTH_DELIMS:
+                is_fixed_width = not is_fixed_width
+
+            if is_fixed_width and delim not in FIXED_WIDTH_DELIMS:
+                continue
+
+            if text_url:
+                markup = None
+
+                if bang:
+                    parsed = urllib.parse.urlparse(url)
+                    params = urllib.parse.parse_qs(parsed.query)
+
+                    if parsed.scheme == "tg" and parsed.netloc == "emoji":
+                        emoji_id = params.get("id", [""])[0]
+
+                        if emoji_id.isdigit():
+                            markup = EMOJI_MARKUP.format(emoji_id, text_url)
+                    elif parsed.scheme == "tg" and parsed.netloc == "time":
+                        unix_time = params.get("unix", [""])[0]
+
+                        if unix_time.isdigit():
+                            markup = DATE_TIME_MARKUP.format(
+                                unix_time, params.get("format", [""])[0], text_url
+                            )
+
+                if markup is None:
+                    markup = bang + URL_MARKUP.format(url, text_url)
+
+                text = utils.replace_once(text, full, markup, start)
+                continue
+
+            if delim == BOLD_DELIM:
+                tag = "b"
+            elif delim == ITALIC_DELIM:
+                tag = "i"
+            elif delim == UNDERLINE_DELIM:
+                tag = "u"
+            elif delim == STRIKE_DELIM:
+                tag = "s"
+            elif delim == CODE_DELIM:
+                tag = "code"
+            elif delim == PRE_DELIM:
+                tag = "pre"
+            elif delim == SPOILER_DELIM:
+                tag = "spoiler"
+            else:
+                continue
+
+            if delim not in delims:
+                delims.add(delim)
+                tag = OPENING_TAG.format(tag)
+            else:
+                delims.remove(delim)
+                tag = CLOSING_TAG.format(tag)
+
+            if delim == PRE_DELIM and delim in delims:
+                pos = text.find(PRE_DELIM, start)
+                delim_and_language = text[pos:].split("\n")[0]
+                language = delim_and_language[len(PRE_DELIM):]
+                end = pos + len(delim_and_language)
+                if text[end:end + 1] == "\n":
+                    end += 1
+                text = text[:pos] + f'<pre language="{language}">' + text[end:]
+                continue
+
+            if delim == PRE_DELIM:
+                pos = text.find(PRE_DELIM, start)
+                if pos > 0 and text[pos - 1] == "\n":
+                    text = text[:pos - 1] + tag + text[pos + len(PRE_DELIM):]
+                    continue
+
+            text = utils.replace_once(text, delim, tag, start)
+
+        return await self.html.parse(text)
+
+    @staticmethod
+    def unparse(text: str, entities: list):
+        def parse_one(entity, start, end):
+            entity_type = entity.type
+
+            if entity_type == MessageEntityType.BOLD:
+                start_tag = end_tag = BOLD_DELIM
+            elif entity_type == MessageEntityType.ITALIC:
+                start_tag = end_tag = ITALIC_DELIM
+            elif entity_type == MessageEntityType.UNDERLINE:
+                start_tag = end_tag = UNDERLINE_DELIM
+            elif entity_type == MessageEntityType.STRIKETHROUGH:
+                start_tag = end_tag = STRIKE_DELIM
+            elif entity_type == MessageEntityType.CODE:
+                start_tag = end_tag = CODE_DELIM
+            elif entity_type == MessageEntityType.PRE:
+                language = getattr(entity, "language", "") or ""
+                start_tag = f"{PRE_DELIM}{language}\n"
+                end_tag = f"\n{PRE_DELIM}"
+            elif entity_type == MessageEntityType.BLOCKQUOTE:
+                expandable = getattr(entity, "expandable", None)
+                start_tag = EXPANDABLE_QUOTE_DELIM if expandable else QUOTE_DELIM
+                end_tag = SPOILER_DELIM if expandable else ""
+
+                extra = []
+
+                for index in range(start, end - 1):
+                    if text[index] == "\n":
+                        extra.append((QUOTE_DELIM, index + 1))
+
+                if expandable:
+                    line_end = text.find("\n", end)
+                    end = len(text) if line_end < 0 else line_end
+
+                return (start_tag, start), (end_tag, end), extra
+            elif entity_type == MessageEntityType.DATE_TIME:
+                unix_time = getattr(entity, "unix_time", 0) or 0
+                dt_format = getattr(entity, "date_time_format", "") or ""
+                start_tag = "!["
+                end_tag = (
+                    f"](tg://time?unix={unix_time}&format={dt_format})"
+                    if dt_format
+                    else f"](tg://time?unix={unix_time})"
+                )
+            elif entity_type == MessageEntityType.CUSTOM_EMOJI:
+                start_tag = "!["
+                end_tag = f"](tg://emoji?id={entity.custom_emoji_id})"
+            elif entity_type == MessageEntityType.SPOILER:
+                start_tag = end_tag = SPOILER_DELIM
+            elif entity_type == MessageEntityType.TEXT_LINK:
+                url = entity.url
+                start_tag = "["
+                end_tag = f"]({url})"
+            elif entity_type == MessageEntityType.TEXT_MENTION:
+                user = entity.user
+                start_tag = "["
+                end_tag = f"](tg://user?id={user.id})"
+            else:
+                return None
+
+            return (start_tag, start), (end_tag, end), []
+
+        def recursive(span_i: int) -> int:
+            start, end, entity = spans[span_i]
+            this = parse_one(entity, start, end)
+
+            if this is None:
+                return 1
+
+            (start_tag, start), (end_tag, end), extra = this
+
+            entities_offsets.append((start_tag, start))
+            entities_offsets.extend(extra)
+
+            internal_i = span_i + 1
+
+            while internal_i < len(spans) and spans[internal_i][0] < end:
+                internal_i += recursive(internal_i)
+
+            entities_offsets.append((end_tag, end))
+
+            return internal_i - span_i
+
+        text = utils.add_surrogates(text)
+
+        spans = utils.split_crossing_spans(text, entities)
+
+        entities_offsets = []
+
+        i = 0
+
+        while i < len(spans):
+            i += recursive(i)
+
+        entities_offsets.sort(key=lambda x: x[1])
+
+        last_offset = len(text)
+
+        for entity, offset in reversed(entities_offsets):
+            text = text[:offset] + entity + text[offset:last_offset] + text[last_offset:]
+            last_offset = offset
+
+        return utils.remove_surrogates(text)

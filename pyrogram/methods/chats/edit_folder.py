@@ -1,0 +1,190 @@
+#  Pyrogram - Telegram MTProto API Client Library for Python
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
+#
+#  This file is part of Pyrogram.
+#
+#  Pyrogram is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU Lesser General Public License as published
+#  by the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  Pyrogram is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
+
+from typing import List, Optional, Union
+
+import pyrogram
+from pyrogram import enums, raw, types, utils
+
+
+class EditFolder:
+    async def edit_folder(
+        self: "pyrogram.Client",
+        folder_id: int,
+        name: Optional[str] = None,
+        parse_mode: Optional["enums.ParseMode"] = None,
+        entities: Optional[List["types.MessageEntity"]] = None,
+        animate_custom_emoji: Optional[bool] = None,
+        icon: Optional[str] = None,
+        color: Optional["enums.FolderColor"] = None,
+        pinned_chats: Optional[List[Union[int, str]]] = None,
+        included_chats: Optional[List[Union[int, str]]] = None,
+        excluded_chats: Optional[List[Union[int, str]]] = None,
+        exclude_muted: Optional[bool] = None,
+        exclude_read: Optional[bool] = None,
+        exclude_archived: Optional[bool] = None,
+        include_contacts: Optional[bool] = None,
+        include_non_contacts: Optional[bool] = None,
+        include_bots: Optional[bool] = None,
+        include_groups: Optional[bool] = None,
+        include_channels: Optional[bool] = None
+    ) -> bool:
+        """Update chat folder.
+
+        .. include:: /_includes/usable-by/users.rst
+
+        Parameters:
+            folder_id (``int``):
+                Unique chat folder identifier, 2-255.
+
+            name (``str``, *optional*):
+                The text of the chat folder name, 1-12 characters without line feeds.
+
+            parse_mode (:obj:`~pyrogram.enums.ParseMode`, *optional*):
+                By default, texts are parsed using both Markdown and HTML styles.
+                You can combine both syntaxes together.
+
+            entities (List of :obj:`~pyrogram.types.MessageEntity`, *optional*):
+                Special entities like bold, italic, etc. that appear in the folder name.
+
+            animate_custom_emoji (``bool``, *optional*):
+                True, if custom emoji in the name must be animated.
+
+            icon (``str``, *optional*):
+                The chosen icon for the chat folder.
+                Pass None to leave the folder icon as default.
+
+            color (:obj:`~pyrogram.enums.FolderColor`, *optional*)
+                Pass :obj:`~pyrogram.enums.FolderColor` to set folder color.
+                Can't be changed if folder tags are disabled or the current user doesn't have Telegram Premium subscription.
+
+            pinned_chats (List of :obj:`~pyrogram.types.Chat`, *optional*):
+                The pinned chats in the folder.
+                You can pass an ID (int), username (str) or phone number (str).
+                There can be up to getOption("chat_folder_chosen_chat_count_max") pinned and always included non-secret chats and the same number of secret chats, but the limit can be increased with Telegram Premium.
+
+            included_chats (List of :obj:`~pyrogram.types.Chat`, *optional*):
+                The always included chats in the folder.
+                You can pass an ID (int), username (str) or phone number (str).
+                There can be up to getOption("chat_folder_chosen_chat_count_max") pinned and always included non-secret chats and the same number of secret chats, but the limit can be increased with Telegram Premium.
+
+            excluded_chats (List of :obj:`~pyrogram.types.Chat`, *optional*):
+                The always excluded chats in the folder.
+                You can pass an ID (int), username (str) or phone number (str).
+                There can be up to getOption("chat_folder_chosen_chat_count_max") always excluded non-secret chats and the same number of secret chats, but the limit can be increased with Telegram Premium.
+
+            exclude_muted (``bool``, *optional*):
+                True, if muted chats need to be excluded.
+
+            exclude_read (``bool``, *optional*):
+                True, if read chats need to be excluded.
+
+            exclude_archived (``bool``, *optional*):
+                True, if archived chats need to be excluded.
+
+            include_contacts (``bool``, *optional*):
+                True, if contacts need to be included.
+
+            include_non_contacts (``bool``, *optional*):
+                True, if non-contact users need to be included.
+
+            include_bots (``bool``, *optional*):
+                True, if bots need to be included.
+
+            include_groups (``bool``, *optional*):
+                True, if basic groups and supergroups need to be included.
+
+            include_channels (``bool``, *optional*):
+                True, if channels need to be included.
+
+        Returns:
+            ``bool``: True, on success.
+
+        Example:
+            .. code-block:: python
+
+                # Update folder
+                await app.edit_folder(folder_id, name="New folder title", included_chats=["me"])
+        """
+        dialog_filters = await self.invoke(raw.functions.messages.GetDialogFilters())
+
+        raw_folders = [
+            folder for folder in dialog_filters.filters
+            if isinstance(folder, (raw.types.DialogFilter, raw.types.DialogFilterChatlist))
+        ]
+
+        for folder in raw_folders:
+            if folder.id == folder_id:
+                break
+        else:
+            raise ValueError(f"Folder with id {folder_id} not found")
+
+        if name is not None:
+            name, title_entities = (await utils.parse_text_entities(self, name, parse_mode, entities)).values()
+
+            folder.title = raw.types.TextWithEntities(
+                text=name,
+                entities=title_entities or []
+            )
+
+        changes = {}
+
+        for argument, field, value in (
+            ("icon", "emoticon", icon),
+            ("exclude_muted", "exclude_muted", exclude_muted),
+            ("exclude_read", "exclude_read", exclude_read),
+            ("exclude_archived", "exclude_archived", exclude_archived),
+            ("include_contacts", "contacts", include_contacts),
+            ("include_non_contacts", "non_contacts", include_non_contacts),
+            ("include_bots", "bots", include_bots),
+            ("include_groups", "groups", include_groups),
+            ("include_channels", "broadcasts", include_channels),
+            ("pinned_chats", "pinned_peers", pinned_chats),
+            ("included_chats", "include_peers", included_chats),
+            ("excluded_chats", "exclude_peers", excluded_chats)
+        ):
+            if value is not None:
+                changes[argument] = (field, value)
+
+        if animate_custom_emoji is not None:
+            changes["animate_custom_emoji"] = (
+                "title_noanimate", not animate_custom_emoji
+            )
+
+        if color is not None:
+            changes["color"] = ("color", color.value)
+
+        for argument, (field, _) in changes.items():
+            if field not in folder.__slots__:
+                raise ValueError(
+                    f"Folder with id {folder_id} does not support {argument}"
+                )
+
+        for field, value in changes.values():
+            if field in ("pinned_peers", "include_peers", "exclude_peers"):
+                value = [await self.resolve_peer(peer) for peer in value]
+
+            setattr(folder, field, value)
+
+        return await self.invoke(
+            raw.functions.messages.UpdateDialogFilter(
+                id=folder_id,
+                filter=folder
+            )
+        )
+
