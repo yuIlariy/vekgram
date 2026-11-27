@@ -1,0 +1,64 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Sync docs dependencies
+        run: uv sync --frozen --extra docs
+
+      - name: Generate API
+        run: |
+          uv run python3 compiler/errors/compiler.py
+          cd compiler/api && uv run python3 compiler.py
+
+      - name: Generate error definitions
+        run: uv run python compiler/errors/compiler.py
+
+      - name: Generate API docs
+        run: uv run python compiler/docs/compiler.py
+
+      - name: Build Sphinx docs
+        run: uv run sphinx-build -b dirhtml docs/source docs/build -j auto
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: docs/build
+
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

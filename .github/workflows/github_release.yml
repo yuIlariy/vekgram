@@ -1,0 +1,40 @@
+name: GitHub Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Generate API
+        run: |
+          uv sync --frozen
+          uv run python3 compiler/errors/compiler.py
+          cd compiler/api && uv run python3 compiler.py
+
+      - name: Build package
+        run: uv build
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
