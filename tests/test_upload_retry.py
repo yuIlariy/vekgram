@@ -106,17 +106,33 @@ async def test_a_503_storm_is_still_ridden_out(tmp_path, monkeypatch):
     assert len(attempts) > 12
 
 
-async def test_a_big_file_goes_out_in_1_mib_big_parts(tmp_path, monkeypatch):
-    # 11 MiB > 10 MiB threshold: SaveBigFilePart allows 1 MiB parts,
-    # half the requests of 512 KiB SaveFilePart for the same bytes
-    result, attempts, _ = await upload(tmp_path, monkeypatch, lambda n: None, size=11 * CHUNK)
+async def test_parts_never_exceed_the_servers_512_kib_limit(tmp_path, monkeypatch):
+    # the server answers any upload part whose content exceeds 512 KiB with
+    # FILE_PART_TOO_BIG - for saveFilePart AND saveBigFilePart alike - and a
+    # 4xx is not retried, so one oversized part fails the whole upload.
+    # Files over 10 MiB must still switch to SaveBigFilePart (mandatory),
+    # just with 512 KiB parts.
+    for size_mib in (4, 11):
+        result, attempts, _ = await upload(
+            tmp_path, monkeypatch, lambda n: None, size=size_mib * CHUNK
+        )
 
-    assert result is not None
-    assert result.parts == 11, f"{result.parts} parts for 11 MiB"
-    assert len(attempts) == 11, f"{len(attempts)} sends; one per 1 MiB part"
-    assert all(
-        isinstance(q, raw.functions.upload.SaveBigFilePart) for q in attempts
-    ), "big files must not use SaveFilePart"
+        assert result is not None
+        assert all(len(q.bytes) <= 512 * 1024 for q in attempts), (
+            f"{size_mib} MiB upload sent a part bigger than 512 KiB"
+        )
+        assert len(attempts) == result.parts == size_mib * 2, (
+            f"{len(attempts)} sends, result.parts={result.parts}; "
+            f"{size_mib} MiB in 512 KiB parts"
+        )
+        if size_mib * CHUNK > 10 * 1024 * 1024:
+            assert all(
+                isinstance(q, raw.functions.upload.SaveBigFilePart) for q in attempts
+            ), "files over 10 MiB must use SaveBigFilePart"
+        else:
+            assert all(
+                isinstance(q, raw.functions.upload.SaveFilePart) for q in attempts
+            ), "files up to 10 MiB must use SaveFilePart"
 
 
 async def test_simultaneous_floods_share_one_gate(tmp_path, monkeypatch):

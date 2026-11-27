@@ -127,8 +127,10 @@ Both budgets are *priority* semaphores. ``download_media`` gives files up to 8 M
 and everything bigger priority 0 (pass ``priority=`` to override), so a quick rename of a
 small file jumps ahead of a big background transfer instead of queueing behind it.
 
-Files over 10 MiB upload as 1 MiB ``SaveBigFilePart`` parts instead of 512 KiB ``SaveFilePart``
-parts — half the requests for the same bytes.
+Upload parts are always 512 KiB — the server answers anything bigger with ``FILE_PART_TOO_BIG``
+for ``SaveFilePart`` *and* ``SaveBigFilePart`` alike (the 1 MiB figure in the Telegram docs is the
+*download* limit per ``upload.GetFile``, not an upload part size). Files over 10 MiB still switch
+to ``SaveBigFilePart`` as the server requires, just with 512 KiB parts.
 
 A ``FLOOD_WAIT`` on a transfer no longer makes every worker sleep the full server-asked time
 on its own: one gate per transfer arms the earliest retry deadline, and each flooded worker
