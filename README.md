@@ -108,7 +108,7 @@ uv run poe test
 
 ### Publishing to PyPI
 
-Releases are published with **PyPI Trusted Publishing (OIDC)** — no API token is stored anywhere. `.github/workflows/publish.yml` runs when a GitHub release is published, with `permissions: id-token: write` in the `pypi` environment, and `uv publish` exchanges the OIDC token automatically. The trusted publisher on PyPI is registered for this repository (`yuIlariy/vekgram`), workflow `publish.yml`. To release: create a GitHub release (e.g. `v3.1.7`); the first run activates the pending publisher and uploads `vekgram` to PyPI.
+Releases are published with **PyPI Trusted Publishing (OIDC)** — no API token is stored anywhere. `.github/workflows/publish.yml` runs when a GitHub release is published, with `permissions: id-token: write` in the `vekgram` environment, and `uv publish` exchanges the OIDC token automatically. The trusted publisher on PyPI is registered for this repository (`yuIlariy/vekgram`), workflow `publish.yml`. To release: create a GitHub release (e.g. `v3.1.7`); the first run activates the pending publisher and uploads `vekgram` to PyPI.
 
 ### Credits
 
