@@ -115,6 +115,36 @@ rather than assume the default protects the link globally.
 handled, per client. Decrypting never stops, so when handlers fall behind, the batches above
 the cap are dropped with one warning per overload instead of piling up as tasks in memory.
 
+Transfer concurrency, priority and flood gates
+----------------------------------------------
+
+Downloads and uploads each get their own concurrency budget,
+``VEKGRAM_MAX_CONCURRENT_DOWNLOADS`` / ``VEKGRAM_MAX_CONCURRENT_UPLOADS`` (both default to
+``VEKGRAM_MAX_CONCURRENT_TRANSMISSIONS``, 16), so a burst of uploads can no longer starve
+downloads of slots and vice versa.
+
+Both budgets are *priority* semaphores. ``download_media`` gives files up to 8 MiB priority 1
+and everything bigger priority 0 (pass ``priority=`` to override), so a quick rename of a
+small file jumps ahead of a big background transfer instead of queueing behind it.
+
+Files over 10 MiB upload as 1 MiB ``SaveBigFilePart`` parts instead of 512 KiB ``SaveFilePart``
+parts — half the requests for the same bytes.
+
+A ``FLOOD_WAIT`` on a transfer no longer makes every worker sleep the full server-asked time
+on its own: one gate per transfer arms the earliest retry deadline, and each flooded worker
+sleeps to that deadline plus up to 1 s of jitter, so a herd of flooded workers re-fires
+staggered instead of in one synchronized burst. The same gate exists per session for 5xx /
+timeout retries, which is what stops a ``-503`` storm from being retried in lockstep.
+
+Media and CDN pool sessions ping every ``VEKGRAM_MEDIA_PING_INTERVAL`` (30) seconds instead
+of every 5: a dozen pooled file connections do not need a 5 s keepalive each. The main session
+still pings every 5 s. Dropped updates are counted on ``dispatcher.dropped_updates``; the
+handler queue size is ``VEKGRAM_UPDATE_QUEUE`` (1024).
+
+Bots get the built-in ``RateLimiter`` defaults automatically at ``start()`` (users opt in with
+``rate_limits=``), so a bot that forgets to configure throttling is still not firing
+unlimited requests.
+
 Environment knobs
 -----------------
 
@@ -146,6 +176,21 @@ Environment knobs
     * - ``VEKGRAM_MAX_PENDING_UPDATES``
       - 256
       - update batches waiting for handlers
+    * - ``VEKGRAM_MAX_CONCURRENT_TRANSMISSIONS``
+      - 16
+      - default cap for downloads and uploads each
+    * - ``VEKGRAM_MAX_CONCURRENT_DOWNLOADS``
+      - 16
+      - concurrent downloads (priority queue)
+    * - ``VEKGRAM_MAX_CONCURRENT_UPLOADS``
+      - 16
+      - concurrent uploads (priority queue)
+    * - ``VEKGRAM_UPDATE_QUEUE``
+      - 1024
+      - updates queued for handlers; drops counted in ``dropped_updates``
+    * - ``VEKGRAM_MEDIA_PING_INTERVAL``
+      - 30
+      - keepalive interval on media/CDN sessions (main session: 5 s)
     * - ``VEKGRAM_INLINE_CRYPTO_MAX``
       - 32768
       - bytes encrypted on the event loop

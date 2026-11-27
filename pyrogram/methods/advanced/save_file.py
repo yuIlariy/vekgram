@@ -39,6 +39,7 @@ from pyrogram.session import Session, flood_wait_jitter
 log = logging.getLogger(__name__)
 
 PART_SIZE = 512 * 1024
+BIG_PART_SIZE = 1024 * 1024  # SaveBigFilePart accepts up to 1 MiB; SaveFilePart only 512 KiB
 POOL_SIZE = 20
 MAX_RETRIES = 16
 STALL_TIMEOUT = 900
@@ -157,7 +158,11 @@ class SaveFile:
                         data = None
                         budget.release()
 
+            _flood_until = 0.0
+            _flood_gate = asyncio.Lock()
+
             async def _send_part(session, data):
+                nonlocal _flood_until
                 for attempt in range(MAX_RETRIES):
                     try:
                         if not await session.invoke(
@@ -186,9 +191,13 @@ class SaveFile:
                             if isinstance(e.value, int):
                                 delay = min(e.value, 300)
                             _pacer.on_flood()
-                            # workers that all flooded together must not re-fire
-                            # the same part on the same tick
-                            delay += flood_wait_jitter(delay)
+                            # one gate arms the earliest retry for the whole upload,
+                            # so workers that all flooded together re-fire staggered
+                            # instead of on the same tick
+                            async with _flood_gate:
+                                _flood_until = max(_flood_until, time.monotonic() + delay)
+                                wait = _flood_until - time.monotonic()
+                            delay = wait + flood_wait_jitter(delay)
                         log.warning(
                             "Retrying upload part (attempt %d/%d): %s",
                             attempt + 1, MAX_RETRIES, err_str[:120],
@@ -200,8 +209,6 @@ class SaveFile:
                 return await self.loop.run_in_executor(
                     self.executor, fp.read, batch_size
                 )
-
-            part_size = PART_SIZE
 
             if isinstance(path, (str, os.PathLike)):
                 fp = open(path, "rb", buffering=READ_BUFFER)
@@ -232,8 +239,11 @@ class SaveFile:
                     f"Can't upload files bigger than {file_size_limit_mib} MiB"
                 )
 
-            file_total_parts = int(math.ceil(file_size / part_size))
             is_big = file_size > 10 * 1024 * 1024
+            # big files go out as SaveBigFilePart, which allows 1 MiB parts:
+            # half the requests for the same bytes
+            part_size = BIG_PART_SIZE if is_big else PART_SIZE
+            file_total_parts = int(math.ceil(file_size / part_size))
             pool_cap = max(1, math.ceil((file_total_parts - file_part) / 2))
             rate_limit, tier_pool = _upload_tier_params(is_bot, is_premium)
             pool_size = min(tier_pool, pool_cap)

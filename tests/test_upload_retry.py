@@ -5,6 +5,7 @@ import pytest
 
 import pyrogram.methods.advanced.save_file as save_file_mod
 import pyrogram.session.session as session_mod
+from pyrogram import raw
 from pyrogram.errors import FilePartTooBig, FloodWait, ServiceUnavailable
 from tests.e2e import CHUNK, FakeDC, make_client
 
@@ -89,8 +90,9 @@ async def test_a_flood_wait_sleeps_what_the_server_asked(tmp_path, monkeypatch):
     )
 
     assert result is not None
-    assert any(42 <= s < 43 for s in slept), (
-        f"slept {slept}; the server asked for 42 seconds, plus at most 1s of jitter"
+    assert any(41 <= s < 43 for s in slept), (
+        f"slept {slept}; the shared flood gate arms the retry at the server-asked "
+        "42 seconds (minus clock epsilon), plus at most 1s of jitter"
     )
 
 
@@ -102,3 +104,34 @@ async def test_a_503_storm_is_still_ridden_out(tmp_path, monkeypatch):
 
     assert result is not None
     assert len(attempts) > 12
+
+
+async def test_a_big_file_goes_out_in_1_mib_big_parts(tmp_path, monkeypatch):
+    # 11 MiB > 10 MiB threshold: SaveBigFilePart allows 1 MiB parts,
+    # half the requests of 512 KiB SaveFilePart for the same bytes
+    result, attempts, _ = await upload(tmp_path, monkeypatch, lambda n: None, size=11 * CHUNK)
+
+    assert result is not None
+    assert result.parts == 11, f"{result.parts} parts for 11 MiB"
+    assert len(attempts) == 11, f"{len(attempts)} sends; one per 1 MiB part"
+    assert all(
+        isinstance(q, raw.functions.upload.SaveBigFilePart) for q in attempts
+    ), "big files must not use SaveFilePart"
+
+
+async def test_simultaneous_floods_share_one_gate(tmp_path, monkeypatch):
+    # the first three part sends are all flooded at once; the upload-wide gate
+    # arms one deadline and each retry sleeps to it plus jitter, so no worker
+    # re-fires before the server-asked wait has elapsed
+    result, attempts, slept = await upload(
+        tmp_path, monkeypatch,
+        lambda n: FloodWait(value=10, rpc_name="upload.SaveFilePart") if n <= 3 else None,
+    )
+
+    assert result is not None
+    assert len(attempts) == 8 + 3, f"{len(attempts)} sends for 8 parts, 3 flooded"
+    assert len(slept) == 3, f"slept {slept}; one gated wait per flooded part"
+    assert all(9 <= s <= 11 for s in slept), (
+        f"slept {slept}; each wait is the armed ~10s deadline (minus clock "
+        "epsilon) plus at most 1s of jitter"
+    )

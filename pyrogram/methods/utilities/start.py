@@ -24,6 +24,14 @@ from pyrogram import raw
 log = logging.getLogger(__name__)
 
 
+def enable_default_bot_rate_limiter(client) -> None:
+    """Bots get the built-in RateLimiter defaults at start; users opt in via ``rate_limits=``."""
+    if client.rate_limiter is None and getattr(client.me, "is_bot", False):
+        from pyrogram.methods.rate_limiter import RateLimiter
+        client.rate_limiter = RateLimiter()
+        log.info("Bot rate limiter enabled with built-in defaults")
+
+
 class Start:
     async def start(
         self: "pyrogram.Client"
@@ -73,6 +81,7 @@ class Start:
             # inside the try: a failure in either used to leave a connected client
             # the caller had no way to clean up
             self.me = await self.get_me()
+            enable_default_bot_rate_limiter(self)
             await self.initialize()
         except (Exception, KeyboardInterrupt):
             try:
