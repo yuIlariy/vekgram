@@ -420,6 +420,7 @@ class CdnDC(FakeDC):
         self.seed_hashes = seed_hashes
         self.corrupt_at = corrupt_at
         self.hash_requests = 0
+        self.hash_offsets = []
 
     def hashes_from(self, start):
         out = []
@@ -468,6 +469,7 @@ class CdnDC(FakeDC):
 
         if isinstance(inner, raw.functions.upload.GetCdnFileHashes):
             self.hash_requests += 1
+            self.hash_offsets.append(inner.offset)
             return self.hashes_from(inner.offset)
 
         return super()._answer(inner)
@@ -505,7 +507,13 @@ async def test_cdn_download_reuses_hashes_it_already_holds():
     assert await download_cdn_download(seeded) == SIZE
 
     assert per_chunk.hash_requests == SIZE // CHUNK
-    assert ahead.hash_requests == 1
+    # With a whole-file hash span, whichever worker misses first fetches a span
+    # covering [its_offset, SIZE); workers holding earlier offsets then miss too.
+    # So the count depends on worker scheduling (1 on Linux, up to one per chunk
+    # on a differently-scheduled loop, e.g. macOS) — assert the invariant instead:
+    # at least one fetch, never two fetches for the same offset.
+    assert 1 <= ahead.hash_requests <= SIZE // CHUNK
+    assert ahead.hash_requests == len(set(ahead.hash_offsets))
     assert seeded.hash_requests == 0
 
 
