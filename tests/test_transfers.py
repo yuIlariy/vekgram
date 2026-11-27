@@ -638,7 +638,7 @@ def test_download_tier_defaults_and_env_override(monkeypatch):
 
     assert _download_tier_params(True, False) == (6, 4, 32, 16)
     assert _download_tier_params(False, True) == (6, 4, 150, 35)
-    assert _download_tier_params(False, False) == (5, 3, 8, 8)
+    assert _download_tier_params(False, False) == (5, 3, 16, 16)
 
     monkeypatch.setenv("VEKGRAM_DL_RATE_BOT", "99")
     assert _download_tier_params(True, False)[2] == 99

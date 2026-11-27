@@ -61,7 +61,7 @@ from pyrogram.errors import (
 )
 from pyrogram.handlers.handler import Handler
 from pyrogram.methods import Methods
-from pyrogram.methods.rate_limiter import AdaptiveBucket, TokenBucket
+from pyrogram.methods.rate_limiter import AdaptiveBucket
 from pyrogram.qrlogin import QRLogin
 from pyrogram.session import Auth, Session, flood_wait_jitter
 from pyrogram.storage import SQLiteStorage, Storage
@@ -281,11 +281,13 @@ def _download_tier_params(is_bot: bool, is_premium: bool) -> tuple:
             int(os.environ.get("VEKGRAM_DL_RATE_PREMIUM", 150)),
             int(os.environ.get("VEKGRAM_DL_BURST_PREMIUM", 35)),
         )
+    # plain users start at the old default rate; the adaptive pacer backs the
+    # rate off on every FLOOD_WAIT, so a faster start is self-regulating
     return (
         int(os.environ.get("VEKGRAM_DL_POOL_USER", 5)),
         int(os.environ.get("VEKGRAM_DL_WORKERS_USER", 3)),
-        int(os.environ.get("VEKGRAM_DL_RATE_USER", 8)),
-        int(os.environ.get("VEKGRAM_DL_BURST_USER", 8)),
+        int(os.environ.get("VEKGRAM_DL_RATE_USER", 16)),
+        int(os.environ.get("VEKGRAM_DL_BURST_USER", 16)),
     )
 
 
@@ -2054,7 +2056,11 @@ class Client(Methods):
                 elif isinstance(r, raw.types.upload.FileCdnRedirect):
                     await _drop_prefetch()
 
-                    _cdn_rate = TokenBucket(rate=dl_rate, burst=dl_burst)
+                    _cdn_rate = AdaptiveBucket(
+                        rate=dl_rate, ceiling=max(dl_rate, 150), burst=dl_burst
+                    )
+                    _cdn_flood_until = 0.0
+                    _cdn_flood_gate = asyncio.Lock()
                     _report_tasks = set()
                     _stop_requested = False
                     _cdn_hashes = {h.offset: h for h in r.file_hashes}
@@ -2139,7 +2145,7 @@ class Client(Methods):
                                 cdn_work.put_nowait(offset_bytes + i * chunk_size)
 
                             async def _cdn_worker(sess):
-                                nonlocal _cdn_done
+                                nonlocal _cdn_done, _cdn_flood_until
 
                                 while True:
                                     await buffer_slots.acquire()
@@ -2174,11 +2180,18 @@ class Client(Methods):
                                                     raise
 
                                                 slept += amount
+                                                _cdn_rate.on_flood()
                                                 log.warning(
                                                     '[%s] Waiting for %s seconds before continuing (required by "upload.GetCdnFile")',
                                                     self.name, amount,
                                                 )
-                                                await asyncio.sleep(amount + flood_wait_jitter(amount))
+                                                # one gate arms the earliest retry for the
+                                                # whole CDN transfer; flooded workers re-fire
+                                                # staggered instead of on the same tick
+                                                async with _cdn_flood_gate:
+                                                    _cdn_flood_until = max(_cdn_flood_until, time.monotonic() + amount)
+                                                    wait = _cdn_flood_until - time.monotonic()
+                                                await asyncio.sleep(wait + flood_wait_jitter(amount))
                                                 continue
 
                                             if isinstance(r2, raw.types.upload.CdnFileReuploadNeeded):
@@ -2199,6 +2212,7 @@ class Client(Methods):
                                                         _reupload_done.set()
                                                 continue
 
+                                            _cdn_rate.on_success()
                                             break
 
                                         chunk = r2.bytes
