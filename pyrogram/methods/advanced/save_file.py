@@ -38,8 +38,7 @@ from pyrogram.session import Session, flood_wait_jitter
 
 log = logging.getLogger(__name__)
 
-PART_SIZE = 512 * 1024
-BIG_PART_SIZE = 1024 * 1024  # SaveBigFilePart accepts up to 1 MiB; SaveFilePart only 512 KiB
+PART_SIZE = 512 * 1024  # server-side per-part content limit is 512 KiB for BOTH saveFilePart and saveBigFilePart (FILE_PART_TOO_BIG above it)
 POOL_SIZE = 20
 MAX_RETRIES = 16
 STALL_TIMEOUT = 900
@@ -156,8 +155,7 @@ class SaveFile:
                         _pacer.on_success()
                     finally:
                         data = None
-                        for _ in range(slots_per_part):
-                            budget.release()
+                        budget.release()
 
             _flood_until = 0.0
             _flood_gate = asyncio.Lock()
@@ -206,10 +204,12 @@ class SaveFile:
                         await asyncio.sleep(delay)
 
             async def read_batch():
-                batch_size = min(part_size * n_workers, MAX_BATCH)
+                batch_size = min(PART_SIZE * n_workers, MAX_BATCH)
                 return await self.loop.run_in_executor(
                     self.executor, fp.read, batch_size
                 )
+
+            part_size = PART_SIZE
 
             if isinstance(path, (str, os.PathLike)):
                 fp = open(path, "rb", buffering=READ_BUFFER)
@@ -240,14 +240,8 @@ class SaveFile:
                     f"Can't upload files bigger than {file_size_limit_mib} MiB"
                 )
 
-            is_big = file_size > 10 * 1024 * 1024
-            # big files go out as SaveBigFilePart, which allows 1 MiB parts:
-            # half the requests for the same bytes
-            part_size = BIG_PART_SIZE if is_big else PART_SIZE
-            # every window below is counted in bytes, not parts, so 1 MiB
-            # parts hold exactly what 512 KiB parts held
-            slots_per_part = max(1, part_size // PART_SIZE)
             file_total_parts = int(math.ceil(file_size / part_size))
+            is_big = file_size > 10 * 1024 * 1024
             pool_cap = max(1, math.ceil((file_total_parts - file_part) / 2))
             rate_limit, tier_pool = _upload_tier_params(is_bot, is_premium)
             pool_size = min(tier_pool, pool_cap)
@@ -270,9 +264,7 @@ class SaveFile:
 
                 _acked = [0]
 
-                # the in-flight window is a byte budget, not a part count: with
-                # 1 MiB big-file parts, half as many workers hold the same bytes
-                n_workers = max(1, len(pool) * 2 * PART_SIZE // part_size)
+                n_workers = len(pool) * 2
                 queue = asyncio.Queue(n_workers)
                 budget = ReadAhead(self.read_ahead_slots)
                 workers = [
@@ -285,10 +277,7 @@ class SaveFile:
 
             next_batch_task = None
             _pacer = AdaptiveBucket(
-                rate=rate_limit,
-                ceiling=max(rate_limit, 300),
-                burst=max(1, PACER_BURST * PART_SIZE // part_size),
-                step=1.0,
+                rate=rate_limit, ceiling=max(rate_limit, 300), burst=PACER_BURST, step=1.0
             )
             _paced = is_bot or not is_premium
             _stalled_since = 0.0
@@ -358,8 +347,7 @@ class SaveFile:
                         if _paced:
                             await _pacer.acquire()
 
-                        for _ in range(slots_per_part):
-                            await budget.acquire()
+                        await budget.acquire()
 
                         while True:
                             try:
