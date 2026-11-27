@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump for the release
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: vek
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Bump __version__
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          python3 - <<'PY'
+          import os, re, pathlib
+          p = pathlib.Path("pyrogram/__init__.py")
+          src = p.read_text(encoding="utf-8")
+          cur = re.search(r'__version__ = "([^"]+)"', src).group(1)
+          a, b, c = (int(x) for x in cur.split(".")[:3])
+          bump = os.environ["BUMP"]
+          if bump == "major":
+              a, b, c = a + 1, 0, 0
+          elif bump == "minor":
+              b, c = b + 1, 0
+          else:
+              c += 1
+          new = f"{a}.{b}.{c}"
+          p.write_text(src.replace(f'__version__ = "{cur}"', f'__version__ = "{new}"', 1), encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"version={new}\n")
+          PY
+
+      - name: Commit, tag and push (triggers publish.yml)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyrogram/__init__.py
+          git commit -m "chore(release): v${{ steps.version.outputs.version }}"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin vek
+          git push origin "v${{ steps.version.outputs.version }}"
