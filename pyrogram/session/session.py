@@ -150,6 +150,8 @@ class Session:
         self._dropped_updates = 0
         self._flood_until = 0.0
         self._flood_gate = asyncio.Lock()
+        self._backoff_until = 0.0
+        self._backoff_gate = asyncio.Lock()
         self._invoke_semaphore = (
             asyncio.Semaphore(Session.MAX_INFLIGHT_MEDIA) if is_media else None
         )
@@ -363,6 +365,7 @@ class Session:
         self.stored_msg_ids.clear()
         self._msg_id_floor = 0
         self._flood_until = 0.0
+        self._backoff_until = 0.0
 
         if self.connection:
             await self.connection.close()
@@ -891,7 +894,7 @@ class Session:
 
                 attempt += 1
 
-                (log.warning if retries < 2 else log.info)(
+                (log.warning if retries < 2 else log.debug)(
                     '[%s] Retrying "%s" (attempt %s/%s) due to: %s',
                     self.client.name, query_name,
                     Session.MAX_RETRIES - retries, Session.MAX_RETRIES,
@@ -904,7 +907,15 @@ class Session:
                     isinstance(e, TimeoutError)
                     and time.monotonic() - self.last_packet_received < self.WAIT_TIMEOUT
                 ):
-                    await asyncio.sleep(min(2 ** (attempt - 1), 30))
+                    backoff = min(2 ** (attempt - 1), 30)
+                    # A DC answering 5xx/timeout is already overloaded: parallel
+                    # in-flight requests must not re-fire in lockstep on the same
+                    # tick, so one gate arms the earliest retry time for the whole
+                    # session and each waiter adds its own jitter on top.
+                    async with self._backoff_gate:
+                        self._backoff_until = max(self._backoff_until, time.monotonic() + backoff)
+                        wait = self._backoff_until - time.monotonic()
+                    await asyncio.sleep(wait + flood_wait_jitter(backoff))
                 else:
                     await self.restart()
 
