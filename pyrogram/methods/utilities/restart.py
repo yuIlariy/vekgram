@@ -1,0 +1,78 @@
+#  Pyrogram - Telegram MTProto API Client Library for Python
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
+#
+#  This file is part of Pyrogram.
+#
+#  Pyrogram is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU Lesser General Public License as published
+#  by the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  Pyrogram is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
+
+import pyrogram
+from pyrogram import utils
+
+
+class Restart:
+    async def restart(
+        self: "pyrogram.Client",
+        block: bool = True,
+        clear_handlers: bool = False
+    ):
+        """Restart the Client.
+
+        .. include:: /_includes/usable-by/users-bots.rst
+
+
+        This method will first call :meth:`~pyrogram.Client.stop` and then :meth:`~pyrogram.Client.start` in a row in
+        order to restart a client using a single method. Restarting a client that is already stopped simply starts it.
+
+        Parameters:
+            block (``bool``, *optional*):
+                Blocks the code execution until the client has been restarted. It is useful with ``block=False`` in case
+                you want to restart the own client within an handler in order not to cause a deadlock.
+                Defaults to True.
+
+            clear_handlers (``bool``, *optional*):
+                Pass True to drop the registered handlers while restarting.
+                Defaults to False.
+
+        Returns:
+            :obj:`~pyrogram.Client`: The restarted client itself.
+
+        Example:
+            .. code-block:: python
+
+                from vekgram import Client
+
+                app = Client("my_account")
+
+
+                async def main():
+                    await app.start()
+                    ...  # Invoke API methods
+                    await app.restart()
+                    ...  # Invoke other API methods
+                    await app.stop()
+
+
+                app.run(main())
+        """
+
+        async def do_it():
+            await self.stop(clear_handlers=clear_handlers)
+            await self.start()
+
+        if block:
+            await do_it()
+        else:
+            utils.run_in_background(do_it(), self.loop)
+
+        return self

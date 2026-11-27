@@ -1,0 +1,143 @@
+[build-system]
+requires = ["hatchling", "pyyaml", "jinja2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vekgram"
+dynamic = ["version"]
+description = "Elegant, modern and asynchronous Telegram MTProto API framework in Python for users and bots"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Dan", email = "dan@pyrogram.org" }]
+maintainers = [
+    { name = "yuIlariy" },
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Programming Language :: Python :: Implementation",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: Free Threading :: 3 - Stable",
+    "Topic :: Internet",
+    "Topic :: Communications",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = ["python-socks[asyncio]>=2.4.0", "warpcrypto>=2.0.8", "aiosqlite>=0.20.0"]
+license = "LGPL-3.0-or-later"
+license-files = ["COPYING", "COPYING.lesser"]
+keywords = [
+    "telegram",
+    "chat",
+    "messenger",
+    "mtproto",
+    "api",
+    "client",
+    "library",
+    "python",
+]
+
+[project.urls]
+Homepage = "https://github.com/yuIlariy/vekgram"
+Documentation = "https://vekgram.com"
+Source = "https://github.com/yuIlariy/vekgram"
+Issues = "https://github.com/yuIlariy/vekgram/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "twine>=5",
+    "pyyaml>=6",
+    "jinja2>=3",
+    "poethepoet>=0.32",
+]
+fast = [
+    "uvloop<=0.22.1; (sys_platform == 'darwin' or sys_platform == 'linux') and platform_python_implementation == 'CPython'",
+]
+mongo = [
+    "motor>=3.5",
+]
+redis = [
+    "redis>=5.0",
+]
+docs = [
+    "sphinx>=7",
+    "furo>=2023",
+    "sphinx-copybutton>=0.5",
+]
+botapi = [
+    "requests>=2.32",
+    "beautifulsoup4>=4.12",
+    "html5lib>=1.1",
+]
+
+[tool.hatch.version]
+path = "pyrogram/__init__.py"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".github/",
+    "docs/",
+    "tests/",
+    ".gitignore",
+]
+
+[tool.hatch.build.targets.wheel]
+ignore-vcs = true
+packages = ["pyrogram", "vekgram"]
+
+[tool.poe.tasks]
+test = "pytest --no-header -q"
+venv = "uv sync --frozen"
+venv-dev = "uv sync --frozen --extra dev"
+api = { shell = "uv run python3 compiler/api/compiler.py && uv run python3 compiler/errors/compiler.py && uv run python3 compiler/methods/compiler.py" }
+botapi = "uv run python3 compiler/botapi/compiler.py"
+botapi-refresh = "uv run --extra botapi python3 compiler/botapi/refresh.py"
+docs = { shell = "uv run python3 compiler/docs/compiler.py && uv run sphinx-build -b dirhtml docs/source docs/build -j auto" }
+docs-archive = { shell = "cd docs/build && zip -r docs.zip html/" }
+build = "uv build"
+publish = "uv publish"
+tag = { shell = "git tag v$(uv run python3 -c 'from pyrogram import __version__; print(__version__)') && git push origin --tags" }
+dtag = { shell = "git tag -d v$(uv run python3 -c 'from pyrogram import __version__; print(__version__)') && git push origin -d --tags" }
+
+[tool.poe.tasks.clean]
+sequence = ["clean-venv", "clean-build", "clean-api", "clean-docs"]
+
+[tool.poe.tasks.clean-venv]
+shell = "rm -rf .venv"
+
+[tool.poe.tasks.clean-build]
+shell = "rm -rf dist *.egg-info build"
+
+[tool.poe.tasks.clean-api]
+shell = "rm -rf pyrogram/errors/exceptions pyrogram/raw/all.py pyrogram/raw/base pyrogram/raw/functions pyrogram/raw/types"
+
+[tool.poe.tasks.clean-docs]
+shell = "rm -rf docs/build docs/source/api/bound-methods docs/source/api/methods docs/source/api/types docs/source/api/enums docs/source/telegram"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]

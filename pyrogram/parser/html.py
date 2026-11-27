@@ -1,0 +1,304 @@
+#  Pyrogram - Telegram MTProto API Client Library for Python
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
+#
+#  This file is part of Pyrogram.
+#
+#  Pyrogram is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU Lesser General Public License as published
+#  by the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  Pyrogram is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
+
+import html
+import logging
+import re
+from html.parser import HTMLParser
+from typing import Optional
+
+import pyrogram
+from pyrogram import raw
+from pyrogram.enums import MessageEntityType
+from pyrogram.errors import PeerIdInvalid
+from . import utils
+
+log = logging.getLogger(__name__)
+
+
+class Parser(HTMLParser):
+    MENTION_RE = re.compile(r"tg://user\?id=(\d+)")
+
+    def __init__(self, client: "pyrogram.Client"):
+        super().__init__()
+
+        self.client = client
+
+        self.text = ""
+        self.entities = []
+        self.tag_entities = {}
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        extra = {}
+
+        if tag in ["b", "strong"]:
+            entity = raw.types.MessageEntityBold
+        elif tag in ["i", "em"]:
+            entity = raw.types.MessageEntityItalic
+        elif tag in ["u", "ins"]:
+            entity = raw.types.MessageEntityUnderline
+        elif tag in ["s", "del", "strike"]:
+            entity = raw.types.MessageEntityStrike
+        elif tag == "blockquote":
+            entity = raw.types.MessageEntityBlockquote
+            if "expandable" in attrs:
+                extra["collapsed"] = True
+        elif tag == "pre":
+            entity = raw.types.MessageEntityPre
+            extra["language"] = attrs.get("language", "")
+        elif tag == "code":
+            _class = attrs.get("class", "")
+            active_pres = self.tag_entities.get("pre", [])
+            if active_pres:
+                if _class.startswith("language-"):
+                    active_pres[-1].language = _class[9:]
+                return
+            entity = raw.types.MessageEntityCode
+        elif tag in ["spoiler", "tg-spoiler"]:
+            entity = raw.types.MessageEntitySpoiler
+        elif tag == "span" and attrs.get("class", "") == "tg-spoiler":
+            entity = raw.types.MessageEntitySpoiler
+        elif tag == "a":
+            url = attrs.get("href", "")
+
+            mention = Parser.MENTION_RE.match(url)
+
+            if mention:
+                entity = raw.types.InputMessageEntityMentionName
+                extra["user_id"] = int(mention.group(1))
+            else:
+                entity = raw.types.MessageEntityTextUrl
+                extra["url"] = url
+        elif tag in ["emoji", "tg-emoji"]:
+            custom_emoji_id = attrs.get("emoji-id") or attrs.get("id")
+
+            try:
+                extra["document_id"] = int(custom_emoji_id)
+            except (TypeError, ValueError):
+                return
+
+            entity = raw.types.MessageEntityCustomEmoji
+        elif tag == "tg-time":
+            try:
+                extra["date"] = int(attrs.get("unix"))
+            except (TypeError, ValueError):
+                return
+
+            entity = raw.types.MessageEntityFormattedDate
+            date_time_format = attrs.get("format", "")
+            extra = self._parse_date_time_format(extra, date_time_format)
+        else:
+            return
+
+        if tag not in self.tag_entities:
+            self.tag_entities[tag] = []
+
+        self.tag_entities[tag].append(entity(offset=len(self.text), length=0, **extra))
+
+    def handle_data(self, data):
+        data = utils.add_surrogates(data)
+
+        for entities in self.tag_entities.values():
+            for entity in entities:
+                entity.length += len(data)
+
+        self.text += data
+
+    def handle_endtag(self, tag):
+        try:
+            self.entities.append(self.tag_entities[tag].pop())
+        except (KeyError, IndexError):
+            line, offset = self.getpos()
+            offset += 1
+
+            log.debug("Unmatched closing tag </%s> at line %s:%s", tag, line, offset)
+        else:
+            if not self.tag_entities[tag]:
+                self.tag_entities.pop(tag)
+
+    @staticmethod
+    def _parse_date_time_format(extra, date_time_format):
+        extra["relative"] = False
+        extra["short_time"] = False
+        extra["long_time"] = False
+        extra["short_date"] = False
+        extra["long_date"] = False
+        extra["day_of_week"] = False
+
+        if date_time_format:
+            if date_time_format == "r":
+                extra["relative"] = True
+            else:
+                if "w" in date_time_format:
+                    extra["day_of_week"] = True
+                if "d" in date_time_format:
+                    extra["short_date"] = True
+                elif "D" in date_time_format:
+                    extra["long_date"] = True
+                if "t" in date_time_format:
+                    extra["short_time"] = True
+                elif "T" in date_time_format:
+                    extra["long_time"] = True
+
+        return extra
+
+    def error(self, message):
+        pass
+
+
+class HTML:
+    def __init__(self, client: Optional["pyrogram.Client"]):
+        self.client = client
+
+    async def parse(self, text: str):
+        text = text.strip()
+
+        parser = Parser(self.client)
+        parser.feed(utils.add_surrogates(text))
+        parser.close()
+
+        if parser.tag_entities:
+            unclosed_tags = []
+
+            for tag, entities in parser.tag_entities.items():
+                unclosed_tags.append(f"<{tag}> (x{len(entities)})")
+
+            log.info("Unclosed tags: %s", ", ".join(unclosed_tags))
+
+        entities = []
+
+        for entity in parser.entities:
+            if isinstance(entity, raw.types.InputMessageEntityMentionName):
+                try:
+                    if self.client is not None:
+                        entity.user_id = await self.client.resolve_peer(entity.user_id)
+                except PeerIdInvalid:
+                    continue
+
+            entities.append(entity)
+
+        message = parser.text.rstrip()
+        limit = len(message)
+        kept = []
+
+        for entity in entities:
+            if entity.offset >= limit:
+                continue
+
+            entity.length = min(entity.length, limit - entity.offset)
+
+            if entity.length > 0:
+                kept.append(entity)
+
+        return {
+            "message": utils.remove_surrogates(message),
+            "entities": sorted(kept, key=lambda e: e.offset) or None
+        }
+
+    @staticmethod
+    def unparse(text: str, entities: list):
+        def parse_one(entity, start, end):
+            """
+            Parses a single entity and returns (start_tag, start), (end_tag, end)
+            """
+            entity_type = entity.type
+
+            if entity_type in (
+                MessageEntityType.BOLD,
+                MessageEntityType.ITALIC,
+                MessageEntityType.UNDERLINE,
+                MessageEntityType.STRIKETHROUGH,
+            ):
+                name = entity_type.name[0].lower()
+                start_tag = f"<{name}>"
+                end_tag = f"</{name}>"
+            elif entity_type == MessageEntityType.PRE:
+                language = getattr(entity, "language", "") or ""
+                if language:
+                    start_tag = f'<pre><code class="language-{language}">'
+                    end_tag = "</code></pre>"
+                else:
+                    start_tag = "<pre>"
+                    end_tag = "</pre>"
+            elif entity_type == MessageEntityType.CODE:
+                start_tag = "<code>"
+                end_tag = "</code>"
+            elif entity_type == MessageEntityType.SPOILER:
+                start_tag = "<tg-spoiler>"
+                end_tag = "</tg-spoiler>"
+            elif entity_type == MessageEntityType.BLOCKQUOTE:
+                name = "blockquote"
+                expandable = getattr(entity, "expandable", None)
+                start_tag = f"<{name} expandable>" if expandable else f"<{name}>"
+                end_tag = f"</{name}>"
+            elif entity_type == MessageEntityType.TEXT_LINK:
+                url = entity.url
+                start_tag = f'<a href="{url}">'
+                end_tag = "</a>"
+            elif entity_type == MessageEntityType.TEXT_MENTION:
+                user = entity.user
+                start_tag = f'<a href="tg://user?id={user.id}">'
+                end_tag = "</a>"
+            elif entity_type == MessageEntityType.CUSTOM_EMOJI:
+                custom_emoji_id = entity.custom_emoji_id
+                start_tag = f'<tg-emoji emoji-id="{custom_emoji_id}">'
+                end_tag = "</tg-emoji>"
+            elif entity_type == MessageEntityType.DATE_TIME:
+                unix_time = getattr(entity, "unix_time", 0) or 0
+                dt_format = getattr(entity, "date_time_format", "") or ""
+                start_tag = f'<tg-time unix="{unix_time}" format="{dt_format}">'
+                end_tag = "</tg-time>"
+            else:
+                return
+
+            return (start_tag, start), (end_tag, end)
+
+        def recursive(span_i: int) -> int:
+            start, end, entity = spans[span_i]
+            this = parse_one(entity, start, end)
+            if this is None:
+                return 1
+            (start_tag, start), (end_tag, end) = this
+            entities_offsets.append((start_tag, start))
+            internal_i = span_i + 1
+            while internal_i < len(spans) and spans[internal_i][0] < end:
+                internal_i += recursive(internal_i)
+            entities_offsets.append((end_tag, end))
+            return internal_i - span_i
+
+        text = utils.add_surrogates(text)
+
+        spans = utils.split_crossing_spans(text, entities)
+
+        entities_offsets = []
+
+        i = 0
+        while i < len(spans):
+            i += recursive(i)
+
+        last_offset = len(text)
+
+        # no need to sort, but still add entities starting from the end
+        for entity, offset in reversed(entities_offsets):
+            text = text[:offset] + entity + html.escape(text[offset:last_offset]) + text[last_offset:]
+            last_offset = offset
+
+        text = html.escape(text[:last_offset]) + text[last_offset:]
+
+        return utils.remove_surrogates(text)

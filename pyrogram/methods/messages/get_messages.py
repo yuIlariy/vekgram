@@ -1,0 +1,148 @@
+#  Pyrogram - Telegram MTProto API Client Library for Python
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
+#
+#  This file is part of Pyrogram.
+#
+#  Pyrogram is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU Lesser General Public License as published
+#  by the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  Pyrogram is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
+
+import logging
+from typing import Union, List, Iterable, Optional
+
+import pyrogram
+from pyrogram import errors
+from pyrogram import raw
+from pyrogram import types
+from pyrogram import utils
+
+log = logging.getLogger(__name__)
+
+
+# TODO: Rewrite signature: use a flag for replied messages, make message_ids non-optional when not replying
+
+
+class GetMessages:
+    async def get_messages(
+        self: "pyrogram.Client",
+        chat_id: Union[int, str],
+        message_ids: Optional[Union[int, Iterable[int]]] = None,
+        reply_to_message_ids: Optional[Union[int, Iterable[int]]] = None,
+        pinned: Optional[bool] = None,
+        replies: int = 1
+    ) -> Union["types.Message", List["types.Message"]]:
+        """Get one or more messages from a chat by using message identifiers.
+
+        You can retrieve up to 200 messages at once.
+
+        .. include:: /_includes/usable-by/users-bots.rst
+
+        Parameters:
+            chat_id (``int`` | ``str``):
+                Unique identifier (int) or username (str) of the target chat.
+                For your personal cloud (Saved Messages) you can simply use "me" or "self".
+                For a contact that exists in your Telegram address book you can use his phone number (str).
+
+            message_ids (``int`` | Iterable of ``int``, *optional*):
+                Pass a single message identifier or an iterable of message ids (as integers) to get the content of the
+                message themselves.
+
+            reply_to_message_ids (``int`` | Iterable of ``int``, *optional*):
+                Pass a single message identifier or an iterable of message ids (as integers) to get the content of
+                the previous message you replied to using this message.
+                If *message_ids* is set, this argument will be ignored.
+
+            pinned (``bool``, *optional*):
+                Pass True to get the last pinned message of the chat, ignoring *message_ids*.
+
+            replies (``int``, *optional*):
+                The number of subsequent replies to get for each message.
+                Pass 0 for no reply at all or -1 for unlimited replies.
+                Defaults to 1.
+
+        Returns:
+            :obj:`~pyrogram.types.Message` | List of :obj:`~pyrogram.types.Message`: In case *message_ids* was not
+            a list, a single message is returned, otherwise a list of messages is returned.
+
+        Example:
+            .. code-block:: python
+
+                # Get one message
+                await app.get_messages(chat_id, 12345)
+
+                # Get more than one message (list of messages)
+                await app.get_messages(chat_id, [12345, 12346])
+
+                # Get message by ignoring any replied-to message
+                await app.get_messages(chat_id, message_id, replies=0)
+
+                # Get message with all chained replied-to messages
+                await app.get_messages(chat_id, message_id, replies=-1)
+
+                # Get the replied-to message of a message
+                await app.get_messages(chat_id, reply_to_message_ids=message_id)
+
+        Raises:
+            ValueError: In case of invalid arguments.
+        """
+        peer = await self.resolve_peer(chat_id)
+
+        if pinned:
+            is_iterable = False
+
+            if isinstance(peer, raw.types.InputPeerChannel):
+                ids = [raw.types.InputMessagePinned()]
+            else:
+                if isinstance(peer, raw.types.InputPeerChat):
+                    r = await self.invoke(raw.functions.messages.GetFullChat(chat_id=peer.chat_id))
+                    pinned_msg_id = r.full_chat.pinned_msg_id
+                else:
+                    r = await self.invoke(raw.functions.users.GetFullUser(id=peer))
+                    pinned_msg_id = r.full_user.pinned_msg_id
+
+                if not pinned_msg_id:
+                    return None
+
+                ids = [raw.types.InputMessageID(id=pinned_msg_id)]
+        else:
+            ids, ids_type = (
+                (message_ids, raw.types.InputMessageID) if message_ids is not None
+                else (reply_to_message_ids, raw.types.InputMessageReplyTo) if reply_to_message_ids is not None
+                else (None, None)
+            )
+
+            if ids is None:
+                raise ValueError("No argument supplied. Either pass message_ids or reply_to_message_ids")
+
+            is_iterable = not isinstance(ids, int)
+            ids = list(ids) if is_iterable else [ids]
+            ids = [ids_type(id=i) for i in ids]
+
+        if replies < 0:
+            replies = (1 << 31) - 1
+
+        if isinstance(peer, raw.types.InputPeerChannel):
+            rpc = raw.functions.channels.GetMessages(channel=peer, id=ids)
+        else:
+            rpc = raw.functions.messages.GetMessages(id=ids)
+
+        try:
+            r = await self.invoke(rpc, sleep_threshold=-1)
+        except errors.MessageIdsEmpty:
+            if pinned:
+                return None
+
+            raise
+
+        messages = await utils.parse_messages(self, r, replies=replies)
+
+        return messages if is_iterable else messages[0] if messages else None
