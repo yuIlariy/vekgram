@@ -135,14 +135,17 @@ async def test_parts_never_exceed_the_servers_512_kib_limit(tmp_path, monkeypatc
             ), "files up to 10 MiB must use SaveFilePart"
 
 
-async def test_simultaneous_floods_share_one_gate(tmp_path, monkeypatch):
+async def test_simultaneous_floods_share_one_gate(tmp_path, monkeypatch, caplog):
     # the first three part sends are all flooded at once; the upload-wide gate
     # arms one deadline and each retry sleeps to it plus jitter, so no worker
     # re-fires before the server-asked wait has elapsed
-    result, attempts, slept = await upload(
-        tmp_path, monkeypatch,
-        lambda n: FloodWait(value=10, rpc_name="upload.SaveFilePart") if n <= 3 else None,
-    )
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="pyrogram.methods.advanced.save_file"):
+        result, attempts, slept = await upload(
+            tmp_path, monkeypatch,
+            lambda n: FloodWait(value=10, rpc_name="upload.SaveFilePart") if n <= 3 else None,
+        )
 
     assert result is not None
     assert len(attempts) == 8 + 3, f"{len(attempts)} sends for 8 parts, 3 flooded"
@@ -150,4 +153,7 @@ async def test_simultaneous_floods_share_one_gate(tmp_path, monkeypatch):
     assert all(9 <= s <= 11 for s in slept), (
         f"slept {slept}; each wait is the armed ~10s deadline (minus clock "
         "epsilon) plus at most 1s of jitter"
+    )
+    assert caplog.text.count("Retrying upload part") == 1, (
+        f"3 flooded parts must produce one warning per episode, not three:\n{caplog.text}"
     )

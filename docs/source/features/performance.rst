@@ -154,6 +154,11 @@ of every 5: a dozen pooled file connections do not need a 5 s keepalive each. Th
 still pings every 5 s. Dropped updates are counted on ``dispatcher.dropped_updates``; the
 handler queue size is ``VEKGRAM_UPDATE_QUEUE`` (1024).
 
+Under a flood or an overloaded handler queue the *gates* stagger the retries and the logs stay
+readable: each flood gate (session, direct transfer, upload, CDN) and each update-queue overload
+episode logs **one** warning, with the per-waiter detail at debug level. The counter still
+counts every drop/wait, so nothing is hidden — it just is not repeated per waiter.
+
 Bots get the built-in ``RateLimiter`` defaults automatically at ``start()`` (users opt in with
 ``rate_limits=``), so a bot that forgets to configure throttling is still not firing
 unlimited requests.

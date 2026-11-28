@@ -1799,9 +1799,10 @@ class Client(Methods):
                 _paced = _is_bot or not _is_premium
                 _dl_flood_until = 0.0
                 _dl_flood_gate = asyncio.Lock()
+                _dl_flood_warned = False
 
                 async def _worker(session):
-                    nonlocal _done_count, _dl_flood_until
+                    nonlocal _done_count, _dl_flood_until, _dl_flood_warned
                     while True:
                         await buffer_slots.acquire()
 
@@ -1837,15 +1838,21 @@ class Client(Methods):
 
                                     slept += amount
                                     _getfile_rate.on_flood()
-                                    log.warning(
+                                    # one gate arms the earliest retry for the whole
+                                    # transfer; flooded workers re-fire staggered.
+                                    # one warning per flood episode, not per worker
+                                    async with _dl_flood_gate:
+                                        _now = time.monotonic()
+                                        if _dl_flood_until <= _now:
+                                            _dl_flood_warned = False
+                                        _dl_flood_until = max(_dl_flood_until, _now + amount)
+                                        wait = _dl_flood_until - time.monotonic()
+                                        warn = not _dl_flood_warned
+                                        _dl_flood_warned = True
+                                    (log.warning if warn else log.debug)(
                                         '[%s] Waiting for %s seconds before continuing (required by "upload.GetFile")',
                                         self.name, amount,
                                     )
-                                    # one gate arms the earliest retry for the whole
-                                    # transfer; flooded workers re-fire staggered
-                                    async with _dl_flood_gate:
-                                        _dl_flood_until = max(_dl_flood_until, time.monotonic() + amount)
-                                        wait = _dl_flood_until - time.monotonic()
                                     await asyncio.sleep(wait + flood_wait_jitter(amount))
                         except BaseException:
                             buffer_slots.release()
@@ -2061,6 +2068,7 @@ class Client(Methods):
                     )
                     _cdn_flood_until = 0.0
                     _cdn_flood_gate = asyncio.Lock()
+                    _cdn_flood_warned = False
                     _report_tasks = set()
                     _stop_requested = False
                     _cdn_hashes = {h.offset: h for h in r.file_hashes}
@@ -2145,7 +2153,7 @@ class Client(Methods):
                                 cdn_work.put_nowait(offset_bytes + i * chunk_size)
 
                             async def _cdn_worker(sess):
-                                nonlocal _cdn_done, _cdn_flood_until
+                                nonlocal _cdn_done, _cdn_flood_until, _cdn_flood_warned
 
                                 while True:
                                     await buffer_slots.acquire()
@@ -2181,16 +2189,21 @@ class Client(Methods):
 
                                                 slept += amount
                                                 _cdn_rate.on_flood()
-                                                log.warning(
+                                                # one gate arms the earliest retry for the
+                                                # whole CDN transfer; flooded workers re-fire
+                                                # staggered. One warning per flood episode.
+                                                async with _cdn_flood_gate:
+                                                    _now = time.monotonic()
+                                                    if _cdn_flood_until <= _now:
+                                                        _cdn_flood_warned = False
+                                                    _cdn_flood_until = max(_cdn_flood_until, _now + amount)
+                                                    wait = _cdn_flood_until - time.monotonic()
+                                                    warn = not _cdn_flood_warned
+                                                    _cdn_flood_warned = True
+                                                (log.warning if warn else log.debug)(
                                                     '[%s] Waiting for %s seconds before continuing (required by "upload.GetCdnFile")',
                                                     self.name, amount,
                                                 )
-                                                # one gate arms the earliest retry for the
-                                                # whole CDN transfer; flooded workers re-fire
-                                                # staggered instead of on the same tick
-                                                async with _cdn_flood_gate:
-                                                    _cdn_flood_until = max(_cdn_flood_until, time.monotonic() + amount)
-                                                    wait = _cdn_flood_until - time.monotonic()
                                                 await asyncio.sleep(wait + flood_wait_jitter(amount))
                                                 continue
 

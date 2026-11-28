@@ -147,6 +147,55 @@ async def test_dropped_updates_are_counted():
     assert d.dropped_updates == 2
 
 
+async def test_repeated_drops_warn_once_per_overload_episode(caplog):
+    import logging
+
+    d = Dispatcher(SimpleNamespace())
+    d.handler_worker_tasks = [object()]
+    d.starting = True
+    d.ENQUEUE_TIMEOUT = 0.05
+
+    for _ in range(d.updates_queue.maxsize):
+        d.updates_queue.put_nowait(("filler", {}, {}))
+
+    with caplog.at_level(logging.WARNING, logger="pyrogram.dispatcher"):
+        results = await asyncio.gather(*(
+            d.enqueue_update("late", {}, {}) for _ in range(3)
+        ))
+
+    assert results == [False, False, False]
+    assert d.dropped_updates == 3, "every drop is still counted"
+    assert caplog.text.count("cannot keep up") == 1, (
+        f"3 drops in one episode must produce one warning:\n{caplog.text}"
+    )
+
+    # the queue drains -> the next overload is a new episode and warns again
+    while True:
+        try:
+            d.updates_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+    assert await d.enqueue_update("ok", {}, {}) is True
+
+    while True:
+        try:
+            d.updates_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+    for _ in range(d.updates_queue.maxsize):
+        d.updates_queue.put_nowait(("filler", {}, {}))
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="pyrogram.dispatcher"):
+        assert await d.enqueue_update("late2", {}, {}) is False
+
+    assert caplog.text.count("cannot keep up") == 1, (
+        f"the second episode must warn again, exactly once:\n{caplog.text}"
+    )
+    assert d.dropped_updates == 4
+
+
 # ------------------------------------------------------------ rate limiter
 
 
@@ -186,7 +235,9 @@ class FloodDC(FakeDC):
         return super()._answer(query)
 
 
-async def test_download_flood_waits_are_gated_and_staggered(monkeypatch):
+async def test_download_flood_waits_are_gated_and_staggered(monkeypatch, caplog):
+    import logging
+
     slept = []
     # record sleeps from both levels that can answer a flooded GetFile:
     # workers invoke with sleep_threshold=0 (gate in client.get_file), the
@@ -203,9 +254,10 @@ async def test_download_flood_waits_are_gated_and_staggered(monkeypatch):
     for session in await client._get_media_session_pool(2, 4):
         session.stop = stop
 
-    total = 0
-    async for chunk in client.get_file(document(), SIZE):
-        total += len(chunk)
+    with caplog.at_level(logging.WARNING):
+        total = 0
+        async for chunk in client.get_file(document(), SIZE):
+            total += len(chunk)
 
     assert total == SIZE
     assert dc.getfile_calls == SIZE // CHUNK + 3  # every chunk served, 3 of them flooded first
@@ -215,6 +267,19 @@ async def test_download_flood_waits_are_gated_and_staggered(monkeypatch):
         "(armed gate deadline +- clock epsilon, plus up to 1s jitter)"
     )
     assert all(4 <= s <= 6 for s in slept), slept
+
+    def warnings(logger):
+        return sum(
+            1 for r in caplog.records
+            if r.name == logger and 'required by "upload.GetFile"' in r.getMessage()
+        )
+
+    # the first GetFile goes through the session-level gate, the rest through
+    # the transfer-level one: one warning per gate per episode, not per waiter
+    assert warnings("pyrogram.session.session") <= 1
+    assert warnings("pyrogram.client") == 1, (
+        f"flooded workers must produce one warning per episode:\n{caplog.text}"
+    )
 
 
 # ------------------------------------------------------------- cdn floods
@@ -237,7 +302,9 @@ class FloodCdnDC(CdnDC):
         return super()._answer(query)
 
 
-async def test_cdn_flood_waits_are_gated_and_staggered(monkeypatch):
+async def test_cdn_flood_waits_are_gated_and_staggered(monkeypatch, caplog):
+    import logging
+
     slept = []
     monkeypatch.setattr(client_mod, "asyncio", Asyncio(slept))
     monkeypatch.setattr(session_mod, "asyncio", Asyncio(slept))
@@ -251,9 +318,10 @@ async def test_cdn_flood_waits_are_gated_and_staggered(monkeypatch):
     for session in await client._get_media_session_pool(2, 4):
         session.stop = stop
 
-    total = 0
-    async for chunk in client.get_file(document(), SIZE):
-        total += len(chunk)
+    with caplog.at_level(logging.WARNING):
+        total = 0
+        async for chunk in client.get_file(document(), SIZE):
+            total += len(chunk)
 
     assert total == SIZE
     assert dc.cdn_calls == SIZE // CHUNK + 3, (
@@ -262,4 +330,11 @@ async def test_cdn_flood_waits_are_gated_and_staggered(monkeypatch):
     assert len(slept) == 3 and all(4 <= s <= 6 for s in slept), (
         f"slept {slept}; each flooded GetCdnFile must wait on the armed ~5s gate "
         "deadline (+- clock epsilon) plus at most 1s of jitter, not its own full sleep"
+    )
+    cdn_warnings = sum(
+        1 for r in caplog.records
+        if r.name == "pyrogram.client" and 'required by "upload.GetCdnFile"' in r.getMessage()
+    )
+    assert cdn_warnings == 1, (
+        f"3 flooded CDN workers must produce one warning per episode:\n{caplog.text}"
     )

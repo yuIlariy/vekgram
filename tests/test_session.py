@@ -523,6 +523,7 @@ class FloodSession:
         self.client = type("C", (), {"name": "fake"})()
         self._flood_gate = asyncio.Lock()
         self._flood_until = 0.0
+        self._flood_warned = False
 
     async def send(self, query, timeout):
         self.sent += 1
@@ -585,6 +586,7 @@ class ErrorSession:
         self.client = type("C", (), {"name": "fake"})()
         self._flood_gate = asyncio.Lock()
         self._flood_until = 0.0
+        self._flood_warned = False
         self._backoff_gate = asyncio.Lock()
         self._backoff_until = 0.0
 
@@ -620,6 +622,22 @@ async def test_a_4xx_rpc_error_is_never_retried():
     assert session.sent == 1
 
 
+async def test_concurrent_flood_waits_warn_once_per_episode(caplog):
+    import logging
+    session = FloodSession(flood_times=5, amount=1)
+
+    with caplog.at_level(logging.WARNING, logger="pyrogram.session.session"):
+        results = await asyncio.gather(*(
+            Session._invoke(session, FakeQuery(), 3, 1, 10) for _ in range(5)
+        ))
+
+    assert results == ["answer"] * 5
+    assert session.sent == 10
+    assert caplog.text.count("Waiting for") == 1, (
+        f"5 flooded waiters must produce one warning, not five:\n{caplog.text}"
+    )
+
+
 async def test_concurrent_connection_resets_retry_staggered_not_in_lockstep():
     session = ErrorSession(ConnectionResetError("reset"), fail_times=5)
 
@@ -631,11 +649,13 @@ async def test_concurrent_connection_resets_retry_staggered_not_in_lockstep():
     assert session.sent == 10
     assert session._backoff_until > 0, "the backoff gate was never armed"
 
+    # the lockstep property: no retry may fire before the armed 0.1s deadline
+    # (sleep jitter spreads them further, but the deadline is the invariant)
+    first_round = session.send_times[:5]
     retries = session.send_times[5:]
-    spread = max(retries) - min(retries)
-    assert spread > 0.02, (
-        f"the 5 retries fired within {spread:.4f}s of each other; "
-        "the backoff gate should spread them out"
+    assert min(retries) >= min(first_round) + 0.1 - 0.02, (
+        f"a retry fired at {min(retries) - min(first_round):.4f}s after the first "
+        "reset, before the armed 0.1s backoff deadline - lockstep re-fire"
     )
 METHODS = Path(__file__).resolve().parents[1] / "pyrogram" / "methods"
 

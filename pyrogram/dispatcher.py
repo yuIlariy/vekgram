@@ -154,6 +154,7 @@ class Dispatcher:
             maxsize=int(os.environ.get("VEKGRAM_UPDATE_QUEUE", 1024))
         )
         self.dropped_updates = 0
+        self._drop_warned = False
         self.groups = OrderedDict()
 
         self.listeners = getattr(client, "listeners", None)
@@ -394,6 +395,7 @@ class Dispatcher:
         """Hand an update to the workers, waiting for room. Returns False if dropped."""
         try:
             self.updates_queue.put_nowait((update, users, chats))
+            self._drop_warned = False  # room in the queue: any overload episode ended
             return True
         except asyncio.QueueFull:
             pass
@@ -416,20 +418,26 @@ class Dispatcher:
                 self.ENQUEUE_TIMEOUT
             )
         except asyncio.TimeoutError:
-            log.warning(
-                "Dropping %s update after %ss: handlers cannot keep up with the "
-                "update rate (queue size %s). Consider raising `workers` or "
-                "moving slow work off the handler.",
-                type(update).__name__, self.ENQUEUE_TIMEOUT, self.updates_queue.maxsize
-            )
+            # one warning per overload episode, not one per dropped update
+            if not self._drop_warned:
+                self._drop_warned = True
+                log.warning(
+                    "Dropping %s update after %ss: handlers cannot keep up with the "
+                    "update rate (queue size %s, %s dropped so far). Consider raising "
+                    "`workers` or moving slow work off the handler.",
+                    type(update).__name__, self.ENQUEUE_TIMEOUT, self.updates_queue.maxsize,
+                    self.dropped_updates + 1
+                )
             self.dropped_updates += 1
             return False
         else:
+            self._drop_warned = False  # the queue drained: a new episode warns again
             return True
 
     async def start(self):
         self.starting = True
         self.unread_warned = False
+        self._drop_warned = False
 
         try:
             if callable(self.client.start_handler):
