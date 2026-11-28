@@ -349,6 +349,22 @@ def test_docstring_examples_import_vekgram():
     assert not offenders, offenders
 
 
+def test_the_documented_bot_api_version_matches_the_pinned_manifest():
+    """The docs must not drift from the schema vekgram is checked against."""
+
+    manifest = (ROOT / "compiler" / "botapi" / "manifest.yaml").read_text(encoding="utf-8")
+    pinned = re.search(r"(?m)^version: '(.+)'$", manifest).group(1)
+    pinned_date = re.search(r"(?m)^release_date: '(.+)'$", manifest).group(1)
+
+    index = (ROOT / "docs" / "source" / "index.rst").read_text(encoding="utf-8")
+    features = (ROOT / "docs" / "source" / "features" / "index.rst").read_text(encoding="utf-8")
+
+    assert pinned in index, f"docs/source/index.rst does not mention the pinned {pinned}"
+    assert f"**{pinned} ({pinned_date})**" in features, (
+        f"docs/source/features/index.rst does not pin {pinned} ({pinned_date})"
+    )
+
+
 def test_the_library_itself_still_imports_pyrogram():
     """The package is pyrogram. A sweep that reaches the source breaks the build."""
 

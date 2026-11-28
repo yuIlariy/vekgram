@@ -23,9 +23,10 @@ What you get
 ------------
 
 -   **Up to date with Telegram.** Every parameter of every implemented method and type is
-    checked against Bot API 10.2 and the TL schema at build time. :doc:`features/index`
-    walks what Telegram has shipped, in the order it shipped it — business accounts, paid
-    media, gifts, stories, checklists, suggested posts, rich messages, ephemeral messages.
+    checked against Bot API 10.5 (November 22, 2026) and the TL schema (layer 234) at build
+    time. :doc:`features/index` walks what Telegram has shipped, in the order it shipped it —
+    business accounts, paid media, gifts, stories, checklists, suggested posts, rich messages,
+    ephemeral messages, widgets, bot settings.
 -   **Conversations without state machines.** :doc:`features/listeners` waits for the next
     message or button press inline, inside the handler that asked for it.
 -   **Built to stay up.** Opt-in client-side :doc:`rate limiting <features/rate-limiting>`, bounded

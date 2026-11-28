@@ -5,7 +5,7 @@ vekgram tracks Telegram's Bot API and MTProto layers closely. This section expla
 features Telegram has shipped over the past releases, in the order they were released, and
 shows how to use each one from vekgram.
 
-The pinned Bot API schema vekgram is checked against is **Bot API 10.2 (July 14, 2026)**.
+The pinned Bot API schema vekgram is checked against is **Bot API 10.5 (November 22, 2026)**.
 Every parameter of every implemented method and type is verified against it at build time,
 so if a feature is documented here, the parameters that carry it are present.
 
@@ -81,6 +81,18 @@ Telegram Features
       - 10.2
       - July 2026
       - Groups of chats presented as one entity
+    * - :doc:`rich-messages`
+      - 10.3
+      - August 2026
+      - Rich-message blocks, expandable quotations, ephemeral parameters
+    * - :doc:`gifts-and-stars`
+      - 10.4
+      - November 2026
+      - Widgets, TON wallet cards, chat share themes, gift lookup
+    * - :doc:`bot-settings`
+      - 10.5
+      - November 2026
+      - Bot settings via setMySettings, BotFullInfo, /botinvite invites
 
 .. toctree::
     :hidden:
@@ -99,6 +111,7 @@ Telegram Features
     rich-messages
     ephemeral-messages
     communities
+    bot-settings
 
 vekgram Extensions
 -----------------
