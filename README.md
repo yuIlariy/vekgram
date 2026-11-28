@@ -34,7 +34,7 @@ app.run()
 ### Key Features
 
 - **Drop-in Replacement** — New code says `from vekgram import ...`; existing `from pyrogram import ...` codebases migrate with zero changes, since both names are one module.
-- **Up-to-Date** — Supports Gifts, Stories, Topics, Business Accounts, Giveaways, and the latest Telegram layer.
+- **Up-to-Date** — Bot API 10.5 (November 22, 2026) and the latest TL layer: Gifts, Stories, Topics, Business Accounts, Giveaways, bot settings, widgets, rich messages.
 - **Async Natively** — Fully `async`/`await` throughout. Also usable synchronously via `app.run()` for convenience.
 - **Type-hinted** — Every type and method is annotated for excellent editor support.
 - **Fast** — Boosted by [WarpCrypto](https://github.com/rjriajul/WarpCrypto), a high-performance cryptography library written in Rust. `warpcrypto` is a core dependency, so it is always installed with vekgram.
