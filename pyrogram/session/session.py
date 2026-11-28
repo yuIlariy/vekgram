@@ -151,6 +151,7 @@ class Session:
         self._dropped_updates = 0
         self._flood_until = 0.0
         self._flood_gate = asyncio.Lock()
+        self._flood_warned = False
         self._backoff_until = 0.0
         self._backoff_gate = asyncio.Lock()
         self._invoke_semaphore = (
@@ -366,6 +367,7 @@ class Session:
         self.stored_msg_ids.clear()
         self._msg_id_floor = 0
         self._flood_until = 0.0
+        self._flood_warned = False
         self._backoff_until = 0.0
 
         if self.connection:
@@ -887,13 +889,21 @@ class Session:
                 # Every in-flight request that hit this FLOOD_WAIT would sleep
                 # exactly `amount` and re-fire on the same tick, so one gate
                 # arms the earliest retry time for the whole session and each
-                # waiter adds its own jitter on top.
+                # waiter adds its own jitter on top. One warning per flood
+                # episode, not one per waiter.
                 async with self._flood_gate:
-                    self._flood_until = max(self._flood_until, time.monotonic() + amount)
+                    now = time.monotonic()
+                    if self._flood_until <= now:
+                        self._flood_warned = False  # the previous episode has passed
+                    self._flood_until = max(self._flood_until, now + amount)
                     wait = self._flood_until - time.monotonic()
+                    warn = not self._flood_warned
+                    self._flood_warned = True
 
-                log.warning('[%s] Waiting for %s seconds before continuing (required by "%s")',
-                            self.client.name, amount, query_name)
+                (log.warning if warn else log.debug)(
+                    '[%s] Waiting for %s seconds before continuing (required by "%s")',
+                    self.client.name, amount, query_name
+                )
 
                 await asyncio.sleep(wait + flood_wait_jitter(amount))
             except (OSError, RPCError, TimeoutError) as e:

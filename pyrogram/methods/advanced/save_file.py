@@ -159,9 +159,10 @@ class SaveFile:
 
             _flood_until = 0.0
             _flood_gate = asyncio.Lock()
+            _flood_warned = False
 
             async def _send_part(session, data):
-                nonlocal _flood_until
+                nonlocal _flood_until, _flood_warned
                 for attempt in range(MAX_RETRIES):
                     try:
                         if not await session.invoke(
@@ -192,15 +193,27 @@ class SaveFile:
                             _pacer.on_flood()
                             # one gate arms the earliest retry for the whole upload,
                             # so workers that all flooded together re-fire staggered
-                            # instead of on the same tick
+                            # instead of on the same tick. One warning per flood
+                            # episode, not one per worker.
                             async with _flood_gate:
-                                _flood_until = max(_flood_until, time.monotonic() + delay)
+                                _now = time.monotonic()
+                                if _flood_until <= _now:
+                                    _flood_warned = False
+                                _flood_until = max(_flood_until, _now + delay)
                                 wait = _flood_until - time.monotonic()
+                                warn = not _flood_warned
+                                _flood_warned = True
                             delay = wait + flood_wait_jitter(delay)
-                        log.warning(
-                            "Retrying upload part (attempt %d/%d): %s",
-                            attempt + 1, MAX_RETRIES, err_str[:120],
-                        )
+                            if isinstance(e, Flood):
+                                (log.warning if warn else log.debug)(
+                                    "Retrying upload part (attempt %d/%d): %s",
+                                    attempt + 1, MAX_RETRIES, err_str[:120],
+                                )
+                            else:
+                                log.warning(
+                                    "Retrying upload part (attempt %d/%d): %s",
+                                    attempt + 1, MAX_RETRIES, err_str[:120],
+                                )
                         await asyncio.sleep(delay)
 
             async def read_batch():

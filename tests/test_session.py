@@ -523,6 +523,7 @@ class FloodSession:
         self.client = type("C", (), {"name": "fake"})()
         self._flood_gate = asyncio.Lock()
         self._flood_until = 0.0
+        self._flood_warned = False
 
     async def send(self, query, timeout):
         self.sent += 1
@@ -585,6 +586,7 @@ class ErrorSession:
         self.client = type("C", (), {"name": "fake"})()
         self._flood_gate = asyncio.Lock()
         self._flood_until = 0.0
+        self._flood_warned = False
         self._backoff_gate = asyncio.Lock()
         self._backoff_until = 0.0
 
@@ -618,6 +620,22 @@ async def test_a_4xx_rpc_error_is_never_retried():
         await Session._invoke(session, FakeQuery(), 5, 1, 1)
 
     assert session.sent == 1
+
+
+async def test_concurrent_flood_waits_warn_once_per_episode(caplog):
+    import logging
+    session = FloodSession(flood_times=5, amount=1)
+
+    with caplog.at_level(logging.WARNING, logger="pyrogram.session.session"):
+        results = await asyncio.gather(*(
+            Session._invoke(session, FakeQuery(), 3, 1, 10) for _ in range(5)
+        ))
+
+    assert results == ["answer"] * 5
+    assert session.sent == 10
+    assert caplog.text.count("Waiting for") == 1, (
+        f"5 flooded waiters must produce one warning, not five:\n{caplog.text}"
+    )
 
 
 async def test_concurrent_connection_resets_retry_staggered_not_in_lockstep():
